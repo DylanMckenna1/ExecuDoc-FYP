@@ -1,3 +1,4 @@
+// screens/Login.js
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
@@ -8,7 +9,6 @@ import {
   StyledContainer,
   InnerContainer,
   PageLogo,
-  PageTitle,
   SubTitle,
   StyledFormArea,
   LeftIcon,
@@ -35,11 +35,13 @@ const Login = ({ onSignup, onGoogleSignIn, onLogin }) => {
 
   return (
     <StyledContainer>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <InnerContainer>
-        {/* Swap to logo.png later */}
-        <PageLogo resizeMode="contain" source={require('../assets/execudoc-logo.jpg')} />
-        <PageTitle>ExecuDoc</PageTitle>
+        {/* App logo */}
+        <PageLogo
+          resizeMode="contain"
+          source={require('../assets/logo.png')}
+        />
         <SubTitle>Account Login</SubTitle>
 
         <Formik
@@ -69,12 +71,13 @@ const Login = ({ onSignup, onGoogleSignIn, onLogin }) => {
                 onBlur={handleBlur('email')}
                 value={values.email}
                 keyboardType="email-address"
+                autoCapitalize="none"
               />
 
               <MyTextInput
                 label="Password"
                 icon="lock"
-                placeholder="* * * * * * * * *"
+                placeholder="********"
                 placeholderTextColor={darkLight}
                 onChangeText={handleChange('password')}
                 onBlur={handleBlur('password')}
@@ -85,7 +88,7 @@ const Login = ({ onSignup, onGoogleSignIn, onLogin }) => {
                 setHidePassword={setHidePassword}
               />
 
-              {msg ? <MsgBox>{msg}</MsgBox> : null}
+              {msg ? <MsgBox>{msg}</MsgBox> : <MsgBox>{' '}</MsgBox>}
 
               <StyledButton onPress={handleSubmit} disabled={isSubmitting}>
                 <ButtonText>{isSubmitting ? 'Logging in…' : 'Login'}</ButtonText>
@@ -100,12 +103,12 @@ const Login = ({ onSignup, onGoogleSignIn, onLogin }) => {
                     : alert('Google Sign-In coming soon')
                 }
               >
-                <Ionicons name="logo-google" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Ionicons name="logo-google" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                 <ButtonText>Sign in with Google</ButtonText>
               </GoogleButton>
 
               <ExtraView>
-                <ExtraText>Don't have an account already? </ExtraText>
+                <ExtraText>Don&apos;t have an account already? </ExtraText>
                 <TextLink onPress={onSignup}>
                   <TextLinkContent>Signup</TextLinkContent>
                 </TextLink>
@@ -131,13 +134,16 @@ const MyTextInput = ({
       <LeftIcon>
         <Octicons name={icon} size={30} color={brand} />
       </LeftIcon>
+
       <StyledInputLabel>{label}</StyledInputLabel>
       <StyledTextInput {...props} />
+
       {isPassword && (
-        <RightIcon onPress={() => setHidePassword(!hidePassword)}>
+        <RightIcon onPress={() => setHidePassword?.(!hidePassword)}>
+          {/* Ionicons v5 names */}
           <Ionicons
-            name={hidePassword ? 'md-eye-off' : 'md-eye'}
-            size={30}
+            name={hidePassword ? 'eye-off' : 'eye'}
+            size={28}
             color={darkLight}
           />
         </RightIcon>

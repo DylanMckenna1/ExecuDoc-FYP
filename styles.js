@@ -4,16 +4,29 @@ import Constants from 'expo-constants';
 
 const StatusBarHeight = Constants.statusBarHeight;
 
-// Colors 
+// Colors (white theme)
 export const Colors = {
-  primary: '#ffffff',
-  secondary: '#E5E7EB',
-  tertiary: '#1F2937',
-  darkLight: '#9CA3AF',
-  brand: '#2563EB',     // blue accents
-  green: '#10B981',
-  red: '#EF4444',
-  background: '#000000' // app background
+  // page & cards
+  primary:  '#FFFFFF',   // page background (white)
+  surface:  '#F5F7FB',   // light card background (subtle gray)
+
+  // text & inputs
+  secondary:'#E6E8F2',   // input bg (light gray)
+  tertiary: '#1F2937',   // main text (dark)
+  darkLight:'#8C97B5',   // muted text
+
+  // brand
+  brand:   '#6E59F9',    // purple
+  brand2:  '#3AA0FF',    // blue (for gradients)
+
+  // status
+  green:   '#22C55E',
+  red:     '#EF4444',
+  success: '#22C55E',
+  danger:  '#EF4444',
+
+  // legacy alias 
+  background: '#FFFFFF',
 };
 
 const { primary, secondary, tertiary, darkLight, brand, green, red, background } = Colors;
@@ -49,7 +62,7 @@ export const SubTitle = styled.Text`
   margin-bottom: 20px;
   letter-spacing: 1px;
   font-weight: bold;
-  color: ${secondary}; /* a bit brighter on black */
+  color: ${tertiary}; /* darker text for white bg */
 `;
 
 export const StyledFormArea = styled.View`
@@ -72,7 +85,7 @@ export const StyledTextInput = styled.TextInput`
 `;
 
 export const StyledInputLabel = styled.Text`
-  color: ${secondary}; /* improve contrast on black */
+  color: ${darkLight}; /* subtle but readable on white */
   font-size: 13px;
   text-align: left;
 `;
@@ -109,7 +122,7 @@ export const ButtonText = styled.Text`
 export const MsgBox = styled.Text`
   text-align: center;
   font-size: 13px;
-  color: ${secondary};
+  color: ${darkLight};
 `;
 
 export const Line = styled.View`
@@ -119,7 +132,7 @@ export const Line = styled.View`
   margin-vertical: 10px;
 `;
 
-/*"Don't have an account? Signup" */
+/* "Don't have an account? Signup" */
 export const ExtraView = styled.View`
   width: 100%;
   flex-direction: row;
@@ -128,7 +141,7 @@ export const ExtraView = styled.View`
 `;
 
 export const ExtraText = styled.Text`
-  color: ${secondary};
+  color: ${darkLight};
   font-size: 14px;
 `;
 
@@ -140,7 +153,7 @@ export const TextLinkContent = styled.Text`
   font-weight: 600;
 `;
 
-/*  Google button placeholder action*/
+/* Google button placeholder action */
 export const GoogleButton = styled.TouchableOpacity`
   padding: 15px;
   background-color: #34a853; /* Google green */
@@ -151,3 +164,24 @@ export const GoogleButton = styled.TouchableOpacity`
   height: 60px;
   flex-direction: row;
 `;
+
+/*  UI cards/headers */
+export const ScreenTitle = styled.Text`
+  font-size: 28px;
+  font-weight: 800;
+  color: #0F172A; /* darker text on white */
+  margin: 6px 0 2px 0;
+`;
+
+export const Card = styled.View`
+  width: 100%;
+  background-color: ${Colors.surface};  /* light gray card on white page */
+  border-radius: 16px;
+  padding: 16px;
+  margin-vertical: 8px;
+  shadow-color: #000;
+  shadow-opacity: 0.08;
+  shadow-radius: 10px;
+  elevation: 2;
+`;
+

@@ -1,6 +1,7 @@
+// screens/Signup.js
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { View, Text } from 'react-native';
 import { Formik } from 'formik';
 import { Octicons, Ionicons } from '@expo/vector-icons';
 
@@ -8,7 +9,6 @@ import {
   StyledContainer,
   InnerContainer,
   PageLogo,
-  PageTitle,
   SubTitle,
   StyledFormArea,
   LeftIcon,
@@ -28,56 +28,33 @@ import {
 
 const { brand, darkLight } = Colors;
 
-const Signup = ({ onBack, onCreateAccount }) => {
+export default function Signup({ onBack, onCreateAccount }) {
   const [hidePassword, setHidePassword] = useState(true);
   const [hideConfirm, setHideConfirm] = useState(true);
-  const [msg, setMsg] = useState('');
 
   return (
     <StyledContainer>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <InnerContainer>
-        <PageLogo resizeMode="contain" source={require('../assets/execudoc-logo.jpg')} />
-        <PageTitle>ExecuDoc</PageTitle>
+        <PageLogo resizeMode="contain" source={require('../assets/logo.png')} />
         <SubTitle>Account Signup</SubTitle>
 
         <Formik
           initialValues={{ fullName: '', email: '', password: '', confirmPassword: '' }}
-          onSubmit={async (values, actions) => {
-            actions.setSubmitting(true);
-            setMsg('');
-            const fullName = values.fullName.trim();
-            const email = values.email.trim();
-            const password = values.password;
-
-            // simple client checks to avoid silent fails
-            if (!fullName || !email || !password) {
-              setMsg('Please fill in all fields.');
-              actions.setSubmitting(false);
+          onSubmit={(values) => {
+            // basic client check
+            if (values.password !== values.confirmPassword) {
+              alert('Passwords do not match.');
               return;
             }
-            if (password.length < 8) {
-              setMsg('Password must be at least 8 characters.');
-              actions.setSubmitting(false);
-              return;
-            }
-            if (password !== values.confirmPassword) {
-              setMsg('Passwords do not match.');
-              actions.setSubmitting(false);
-              return;
-            }
-
-            try {
-              await onCreateAccount({ fullName, email, password }); // App.js handles navigation
-            } catch (e) {
-              // Show Appwrite error (e.g., "User already exists")
-              setMsg(e?.message || 'Signup failed');
-            } finally {
-              actions.setSubmitting(false);
-            }
+            onCreateAccount?.({
+              fullName: values.fullName.trim(),
+              email: values.email.trim(),
+              password: values.password,
+            });
           }}
         >
-          {({ handleChange, handleBlur, handleSubmit, values, isSubmitting }) => (
+          {({ handleChange, handleBlur, handleSubmit, values }) => (
             <StyledFormArea>
               <MyTextInput
                 label="Full Name"
@@ -98,12 +75,13 @@ const Signup = ({ onBack, onCreateAccount }) => {
                 onBlur={handleBlur('email')}
                 value={values.email}
                 keyboardType="email-address"
+                autoCapitalize="none"
               />
 
               <MyTextInput
                 label="Password"
                 icon="lock"
-                placeholder="* * * * * * * * *"
+                placeholder="********"
                 placeholderTextColor={darkLight}
                 onChangeText={handleChange('password')}
                 onBlur={handleBlur('password')}
@@ -117,7 +95,7 @@ const Signup = ({ onBack, onCreateAccount }) => {
               <MyTextInput
                 label="Confirm Password"
                 icon="lock"
-                placeholder="* * * * * * * * *"
+                placeholder="********"
                 placeholderTextColor={darkLight}
                 onChangeText={handleChange('confirmPassword')}
                 onBlur={handleBlur('confirmPassword')}
@@ -128,10 +106,10 @@ const Signup = ({ onBack, onCreateAccount }) => {
                 setHidePassword={setHideConfirm}
               />
 
-              {msg ? <MsgBox>{msg}</MsgBox> : null}
+              <MsgBox>{' '}</MsgBox>
 
-              <StyledButton onPress={handleSubmit} disabled={isSubmitting}>
-                <ButtonText>{isSubmitting ? 'Creating…' : 'Create Account'}</ButtonText>
+              <StyledButton onPress={handleSubmit}>
+                <ButtonText>Create Account</ButtonText>
               </StyledButton>
 
               <Line />
@@ -148,7 +126,7 @@ const Signup = ({ onBack, onCreateAccount }) => {
       </InnerContainer>
     </StyledContainer>
   );
-};
+}
 
 const MyTextInput = ({
   label,
@@ -163,16 +141,20 @@ const MyTextInput = ({
       <LeftIcon>
         <Octicons name={icon} size={30} color={brand} />
       </LeftIcon>
+
       <StyledInputLabel>{label}</StyledInputLabel>
       <StyledTextInput {...props} />
+
       {isPassword && (
-        <RightIcon onPress={() => setHidePassword(!hidePassword)}>
-          <Ionicons name={hidePassword ? 'md-eye-off' : 'md-eye'} size={30} color={darkLight} />
+        <RightIcon onPress={() => setHidePassword?.(!hidePassword)}>
+          {/* Ionicons v5 names: 'eye' / 'eye-off' (no md- prefix) */}
+          <Ionicons
+            name={hidePassword ? 'eye-off' : 'eye'}
+            size={28}
+            color={darkLight}
+          />
         </RightIcon>
       )}
     </View>
   );
 };
-
-export default Signup;
-

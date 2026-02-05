@@ -1,91 +1,91 @@
-import React, { useState } from 'react';
+// App.js
+import React, { useState, useEffect } from 'react';
+
 import Home from './screens/Home';
 import Login from './screens/Login';
 import Signup from './screens/Signup';
 import Welcome from './screens/Welcome';
-import { appwriteAuth } from './services/appwrite';
+import Documents from './screens/Documents';
+import MainTabs from "./screens/MainTabs";
 
-// DB imports, writes are guarded by USE_DB
+
 import {
-  databases, DB_ID, PROFILES_ID, ID, Permission, Role, Query,
+  login,
+  register,
+  getCurrentUser,
+  logout,
 } from './services/appwrite';
 
-// const USE_DB = true;
-const USE_DB = false;
-
 export default function App() {
-  const [screen, setScreen] = useState('home');   // 'home' | 'login' | 'signup' | 'welcome'
+  // simple router: 'home' | 'login' | 'signup' | 'welcome' | 'documents'
+  const [screen, setScreen] = useState('home');
   const [user, setUser] = useState(null);
 
-  // clear any stale session to avoid “session is active” errors
-  const clearCurrentSession = async () => {
-    try { await appwriteAuth.logout(); } catch {}
-  };
+  // restore existing session on app start
+  useEffect(() => {
+    (async () => {
+      const me = await getCurrentUser();
+      if (me) {
+        setUser({ email: me.email, name: me.name, id: me.$id });
+        setScreen('welcome');
+      }
+    })();
+  }, []);
 
-  const ensureProfile = async (me) => {
-    if (!USE_DB) return null;
-    try {
-      const list = await databases.listDocuments(
-        DB_ID, PROFILES_ID, [Query.equal('userID', me.$id), Query.limit(1)]
-      );
-      if (list.total) return list.documents[0];
-
-      const firstName = me.name?.split(' ')[0] || me.name || '';
-      const rest = me.name?.split(' ').slice(1).join(' ');
-      const lastName = rest && rest.trim().length ? rest : '-';
-
-      return await databases.createDocument(
-        DB_ID, PROFILES_ID, ID.unique(),
-        { userID: me.$id, firstName, lastName, gender: 'not specif', birthDate: null, profilePicture: null },
-        [
-          Permission.read(Role.user(me.$id)),
-          Permission.update(Role.user(me.$id)),
-          Permission.delete(Role.user(me.$id)),
-        ]
-      );
-    } catch (e) {
-      console.log('ensureProfile error (ignored):', e?.message);
-      return null;
-    }
-  };
+  // --- auth handlers ---
 
   const handleLogin = async ({ email, password }) => {
-    try {
-      await clearCurrentSession();
-      await appwriteAuth.login({ email, password });
-      const me = await appwriteAuth.me();
-      await ensureProfile(me); // ignored if USE_DB === false
-      setUser({ email: me.email, name: me.name, id: me.$id });
-      setScreen('welcome');
-    } catch (e) {
-      throw e; // let Login.js show the error
+    const trimmedEmail = (email || '').trim();
+    if (!trimmedEmail || !password) {
+      throw new Error('Please enter both email and password.');
     }
+
+    await login(trimmedEmail, password);
+    const me = await getCurrentUser();
+    if (!me) {
+      throw new Error('Login succeeded but could not load user profile.');
+    }
+
+    setUser({ email: me.email, name: me.name, id: me.$id });
+    setScreen('welcome');
   };
 
   const handleSignup = async ({ fullName, email, password }) => {
-    try {
-      await clearCurrentSession();
-      await appwriteAuth.signup({ fullName, email, password });
-      await appwriteAuth.login({ email, password }); // auto sign-in
-      const me = await appwriteAuth.me();
-      await ensureProfile(me); // ignored if USE_DB === false
-      setUser({ email: me.email, name: me.name, id: me.$id });
-      setScreen('welcome');
-    } catch (e) {
-      throw e; // let Signup.js show the error
+    const trimmedEmail = (email || '').trim();
+    const name = fullName && fullName.trim().length ? fullName.trim() : trimmedEmail;
+
+    if (!trimmedEmail || !password) {
+      throw new Error('Please enter email and password.');
     }
+
+    // register() will also create a session
+    await register(trimmedEmail, password, name);
+    const me = await getCurrentUser();
+    if (!me) {
+      throw new Error('Account created but could not load user profile.');
+    }
+
+    setUser({ email: me.email, name: me.name, id: me.$id });
+    setScreen('welcome');
   };
 
   const handleLogout = async () => {
-    try { await appwriteAuth.logout(); } catch {}
+    await logout();
     setUser(null);
     setScreen('home');
   };
 
-  // Navigation
+  // --- “router” ---
+
   if (screen === 'home') {
-    return <Home onLogin={() => setScreen('login')} onSignup={() => setScreen('signup')} />;
+    return (
+      <Home
+        onLogin={() => setScreen('login')}
+        onSignup={() => setScreen('signup')}
+      />
+    );
   }
+
   if (screen === 'login') {
     return (
       <Login
@@ -95,6 +95,7 @@ export default function App() {
       />
     );
   }
+
   if (screen === 'signup') {
     return (
       <Signup
@@ -103,5 +104,26 @@ export default function App() {
       />
     );
   }
-  return <Welcome user={user} onLogout={handleLogout} />;
+
+  if (screen === 'documents') {
+    // make sure user exists before opening Documents
+    if (!user) {
+      return (
+        <Home
+          onLogin={() => setScreen('login')}
+          onSignup={() => setScreen('signup')}
+        />
+      );
+    }
+    return <Documents user={user} onBack={() => setScreen('welcome')} />;
+  }
+
+  // Default: Main app (tabs)
+return (
+  <MainTabs
+    user={user}
+    onLogout={handleLogout}
+    onOpenProfile={() => alert("Profile coming next")}
+  />
+);
 }
