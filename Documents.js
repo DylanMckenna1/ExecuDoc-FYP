@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import Pdf from 'react-native-pdf';
 import { Buffer } from 'buffer';
+import { saveToLibrary } from '../services/appwrite';
 
 import {
   StyledContainer,
@@ -368,30 +369,51 @@ export default function Documents({ onBack }) {
   try {
     setSummarisingId(doc.$id);
 
-    // ---- CACHE CHECK (no API call if already saved) ----
+    // Cache check sono API call if already saved
     const cache = readTtsCache(doc);
 
-    // SHORT MODE => stored in doc.summary
+    // short mode
 if (!isDetailed) {
  
   const existingShort = (doc.summary || "").trim();
       if (existingShort) {
-        Alert.alert("AI Summary (Short)", existingShort, [
-          {
-            text: "Listen",
-            onPress: () => {
-              setTtsText(existingShort);
-              setTtsContext({ docId: doc.$id, mode: "summary", variant: "short" });
-              setTtsVisible(true);
-            },
-          },
-          { text: "OK", style: "default" },
-        ]);
+      Alert.alert("AI Summary (Short)", existingShort, [
+  {
+    text: "Listen",
+    onPress: () => {
+  setTtsText(existingShort);
+  setTtsContext({ docId: doc.$id, mode: "summary", variant: "short" });
+  setTtsVisible(true);
+},
+  },
+  {
+    text: "Save to Library",
+    onPress: async () => {
+      try {
+       await saveToLibrary({
+  userId,
+  docId: doc.$id,
+  title: doc.title,
+  summaryType: "short",
+  summaryText: existingShort,
+  audioFileId: "",
+  category: doc.category || "",
+keywords: doc.keywords || "",
+});
+        Alert.alert("Saved", "Short summary saved to your Library.");
+      } catch (e) {
+        Alert.alert("Save failed", e?.message || "Could not save summary.");
+      }
+    },
+  },
+  { text: "OK", style: "default" },
+]);
+
         return;
       }
     }
 
-    // DETAILED MODE => stored inside ttsSummaryParts JSON
+    // Detailed mode
 if (isDetailed) {
   const existingDetailed = (cache.summaryDetailedText || "").trim();
   if (existingDetailed) {
@@ -410,8 +432,7 @@ if (isDetailed) {
   }
 }
 
-
-    // ---- Not cached, so call function ONCE ----
+    // Not cached, so call function 
     const result = await callSummariseFunction(doc);
 
     const newSummary = (result?.summary || "").trim();
@@ -422,11 +443,9 @@ if (isDetailed) {
       return;
     }
 
-    // SHORT MODE => stored in doc.summary
 if (!isDetailed) {
 
-      // Save SHORT summary into "summary" column (existing)
-      // clear summaryParts so TTS matches this summary the first time it is listened to
+      // Save short summary into "summary" column
       try {
         const nextCacheJson = makeTtsCache({
           bucketId: cache.bucketId || TTS_BUCKET_ID,
@@ -437,11 +456,6 @@ if (!isDetailed) {
         });
         await updateTtsCacheField(doc.$id, nextCacheJson);
       } catch {}
-
-      // Save summary itself
-     // update doc.summary.
-    // await updateDocFields(doc.$id, { summary: newSummary });
-
     
       await updateDocFields(doc.$id, { summary: newSummary });
 
@@ -457,13 +471,12 @@ if (!isDetailed) {
         { text: "OK", style: "default" },
       ]);
     } else {
-      // Save DETAILED summary into ttsSummaryParts JSON
-      // Reset detailed audio parts so it will generate once for this new detailed text
+      // Save detailed summary into ttsSummaryParts 
       const nextCacheJson = makeTtsCache({
         bucketId: cache.bucketId || TTS_BUCKET_ID,
         docParts: cache.docParts,
         summaryParts: cache.summaryParts,
-        summaryDetailedParts: [], // reset (new detailed summary)
+        summaryDetailedParts: [], // reset for new detailed sum
         summaryDetailedText: newSummary,
       });
 
@@ -509,7 +522,7 @@ const onListenDoc = async (doc) => {
       "No text extracted yet — extracting text now. This can take a few seconds…"
     );
 
-    // Calls extractDocumentText (and caches textContent in DB)
+    // Calls extractDocumentText
     const result = await callExtractTextFunction(doc);
 
     // If the function returns text immediately, use it
@@ -650,7 +663,7 @@ return title.includes(q);
     );
   };
 
-  // play cached parts or generate and then cache
+  // play cached parts 
   const playWithCache = async ({ doc, mode, variant, text }) => {
   const cache = readTtsCache(doc);
 
