@@ -621,6 +621,66 @@ return title.includes(q);
             {item.summary}
           </Text>
         )}
+{/* Category tag */}
+<View style={{ marginTop: 8 }}>
+  <Text style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>
+    Category: {item.category || "None"}
+  </Text>
+
+  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+    {["finance", "history", "study", "legal", "work", "personal"].map((c) => {
+      const active = item.category === c;
+
+      return (
+        <TouchableOpacity
+          key={c}
+          onPress={async () => {
+            try {
+              await updateDocFields(item.$id, { category: c });
+              await load();
+            } catch (e) {
+              Alert.alert("Update failed", "Could not set category.");
+            }
+          }}
+          style={{
+            paddingVertical: 6,
+            paddingHorizontal: 10,
+            borderRadius: 999,
+            backgroundColor: active ? brand : "#F1F5F9",
+            borderWidth: 1,
+            borderColor: active ? brand : "#E2E8F0",
+          }}
+        >
+          <Text style={{ fontSize: 12, color: active ? "#fff" : "#111827", fontWeight: "700" }}>
+            {c}
+          </Text>
+        </TouchableOpacity>
+      );
+    })}
+
+    {/* Clear button */}
+    <TouchableOpacity
+      onPress={async () => {
+        try {
+          await updateDocFields(item.$id, { category: "" });
+          await load();
+        } catch {
+          Alert.alert("Update failed", "Could not clear category.");
+        }
+      }}
+      style={{
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 999,
+        backgroundColor: "#fff",
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
+      }}
+    >
+      <Text style={{ fontSize: 12, fontWeight: "700" }}>Clear</Text>
+    </TouchableOpacity>
+  </View>
+</View>
 
         <View style={{ flexDirection: 'row', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
           <TouchableOpacity
