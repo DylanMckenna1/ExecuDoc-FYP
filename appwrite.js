@@ -7,15 +7,16 @@ import {
   Functions,
   ID,
   Query,
+  Permission,
+  Role,
 } from "react-native-appwrite";
 
-
-// -Expo .env helpers (EXPO_PUBLIC_*) -
+// Expo .env helpers 
 function env(key, fallback = "") {
   return (process?.env?.[key] ?? fallback) || fallback;
 }
 
-// -Core Appwrite config -
+// Core Appwrite configur
 export const APPWRITE_ENDPOINT = env(
   "EXPO_PUBLIC_APPWRITE_ENDPOINT",
   "https://fra.cloud.appwrite.io/v1"
@@ -29,7 +30,13 @@ export const DATABASE_ID = "execudoc_db";
 export const DOCUMENTS_COLLECTION_ID = "documents";
 export const BUCKET_ID = "69202f250019fb07635d";
 
-// - Function domains (from .env) -
+export const SAVED_ITEMS_COLLECTION_ID = "savedItems";
+
+export { Query };
+export const databasesClient = databases; 
+
+
+// Function domains (from .env) 
 export const TTS_FUNCTION_URL = env("EXPO_PUBLIC_TTS_FUNCTION_URL", "");
 export const EXTRACT_TEXT_FUNCTION_ID = "697552940000b9d83b57";
 
@@ -45,14 +52,12 @@ const databases = new Databases(client);
 const storage = new Storage(client);
 const functions = new Functions(client);
 
-
-// - robust JWT string -
 async function getJwtString() {
   const j = await account.createJWT();
   return typeof j === "string" ? j : j?.jwt || "";
 }
 
-// - Auth helpers -
+// Auth helpers
 export async function register(email, password, name) {
   const user = await account.create(ID.unique(), email, password, name);
   await login(email, password);
@@ -80,7 +85,7 @@ export async function logout() {
   }
 }
 
-// - Helpers -
+// Helpers 
 function guessFileType(mimeOrName) {
   const val = (mimeOrName || "").toLowerCase();
   if (val.startsWith("image/")) return "image";
@@ -89,7 +94,7 @@ function guessFileType(mimeOrName) {
   return "other";
 }
 
-// - Document & storage -
+// Document and storage 
 export async function uploadUserDoc(userId, file) {
   if (!userId) throw new Error("Missing userId (you must be logged in).");
 
@@ -173,7 +178,7 @@ export async function updateTtsCacheField(docId, ttsSummaryPartsJson) {
   return updateDocFields(docId, { ttsSummaryParts: ttsSummaryPartsJson || "" });
 }
 
-// - AI summariser -
+// AI summariser 
 export async function callSummariseFunction(doc) {
   const docId = typeof doc === "string" ? doc : doc?.$id;
   if (!docId) throw new Error("Missing docId for summariser.");
@@ -213,7 +218,7 @@ export async function callSummariseFunction(doc) {
   return parsed || { ok: true, summary: bodyText };
 }
 
-// - Extract full text (for Listen without Summarise) -
+// Extract full text 
 export async function callExtractTextFunction(doc) {
   const docId = typeof doc === "string" ? doc : doc?.$id;
   if (!docId) throw new Error("Missing docId for extractDocumentText.");
@@ -223,15 +228,15 @@ export async function callExtractTextFunction(doc) {
   const fileUrl = fileId ? getFileDownloadUrl(fileId) : null;
 
   const payload = {
-    documentId: docId, // what extractDocumentText expects
-    docId, // for compatibility
+    documentId: docId, 
+    docId, 
     ...(fileId ? { fileId } : {}),
     ...(fileUrl ? { fileUrl } : {}),
     ...(mimeType ? { mimeType } : {}),
     ...(doc?.title ? { title: doc.title } : {}),
   };
 
-  // Execute using Appwrite SDK (uses your logged-in session)
+  // Execute 
   const execution = await functions.createExecution(
     EXTRACT_TEXT_FUNCTION_ID,
     JSON.stringify(payload),
@@ -263,4 +268,83 @@ export async function callExtractTextFunction(doc) {
   }
 
   return parsed || { ok: true, textContent: text };
+}
+// Library
+function savedItemPermissions(userId) {
+  if (!userId) return [];
+  return [
+    Permission.read(Role.user(userId)),
+    Permission.update(Role.user(userId)),
+    Permission.delete(Role.user(userId)),
+  ];
+}
+
+export async function listSavedItems(userId) {
+  if (!userId) return [];
+  const res = await databases.listDocuments(
+    DATABASE_ID,
+    SAVED_ITEMS_COLLECTION_ID,
+    [Query.equal("userID", userId), Query.orderDesc("$createdAt")]
+  );
+  return res.documents || [];
+}
+
+export async function isSavedItem(userId, docId, summaryType) {
+  if (!userId || !docId || !summaryType) return null;
+  const res = await databases.listDocuments(
+    DATABASE_ID,
+    SAVED_ITEMS_COLLECTION_ID,
+    [
+      Query.equal("userID", userId),
+      Query.equal("docId", docId),
+      Query.equal("summaryType", summaryType),
+      Query.limit(1),
+    ]
+  );
+  return res.documents?.[0] || null;
+}
+
+export async function saveToLibrary({
+  userId,
+  docId,
+  title,
+  summaryType,
+  summaryText = "",
+  audioFileId = "",
+  category = "",
+  keywords = "",
+}) {
+  if (!userId) throw new Error("Missing userId");
+  if (!docId) throw new Error("Missing docId");
+  if (!title) throw new Error("Missing title");
+  if (!summaryType) throw new Error("Missing summaryType");
+
+  // prevent duplicates 
+  const existing = await isSavedItem(userId, docId, summaryType);
+  if (existing) return existing;
+
+  const data = {
+    userID: userId,
+    docId,
+    title,
+    summaryType,
+    summaryText,
+    audioFileId,
+    category,
+    keywords,
+  };
+
+  // Create with per-user permissions
+  return databases.createDocument(
+    DATABASE_ID,
+    SAVED_ITEMS_COLLECTION_ID,
+    ID.unique(),
+    data,
+    savedItemPermissions(userId)
+  );
+}
+
+export async function removeSavedItem(savedItemId) {
+  if (!savedItemId) throw new Error("Missing savedItemId");
+  return databases.deleteDocument(DATABASE_ID, SAVED_ITEMS_COLLECTION_ID, savedItemId);
 }
