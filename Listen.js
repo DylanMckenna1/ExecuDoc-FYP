@@ -41,7 +41,11 @@ const text = localText || textFromRoute;
         return;
       }
       const docs = await listSavedItems(userId);
-      setItems(docs);
+
+const sorted = [...docs].sort(
+  (a, b) => new Date(b.$createdAt) - new Date(a.$createdAt)
+);
+setItems(sorted);
     } catch (e) {
       setLibError(e?.message || "Failed to load library");
     } finally {
@@ -111,6 +115,27 @@ const filteredItems = items.filter((it) => {
 >
   <Text style={{ fontWeight: "800", color: "#0F172A" }}>Refresh</Text>
 </TouchableOpacity>
+{filteredItems.length > 0 && (
+  <TouchableOpacity
+    onPress={() => {
+      const mostRecent = filteredItems[0];
+      if (!mostRecent.summaryText) return;
+      setLocalText(mostRecent.summaryText);
+    }}
+    style={{
+      marginTop: 10,
+      alignSelf: "flex-start",
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      backgroundColor: brand,
+    }}
+  >
+    <Text style={{ color: "#fff", fontWeight: "800" }}>
+      Open Most Recent
+    </Text>
+  </TouchableOpacity>
+)}
 
 <TextInput
   value={searchQuery}
