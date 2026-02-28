@@ -38,6 +38,7 @@ import {
   listUserDocs,
   deleteUserDoc,
   getFileDownloadUrl,
+  callTagFunction,
   callSummariseFunction,
   updateTtsCacheField,
   callExtractTextFunction,
@@ -143,7 +144,29 @@ export default function Documents({ onBack }) {
   const [summaryPickerVisible, setSummaryPickerVisible] = useState(false);
   const [summaryPickerDoc, setSummaryPickerDoc] = useState(null);
   const [summaryPickerMode, setSummaryPickerMode] = useState("short"); // "short" | "detailed"
- 
+  const CATEGORY_OPTIONS = ["finance", "history", "study", "legal", "work", "personal"];
+
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [categoryModalDoc, setCategoryModalDoc] = useState(null);
+  const [categoryChoice, setCategoryChoice] = useState("");
+  const [categoryCustom, setCategoryCustom] = useState("");
+
+  
+  const onAutoTag = async (doc) => {
+  try {
+    const hasText = (doc.textContent || "").trim().length > 0;
+    if (!hasText) {
+      await callExtractTextFunction(doc);
+    }
+
+    await callTagFunction(doc);
+
+    await load();
+    Alert.alert("Tagged", "Category and keywords updated.");
+  } catch (e) {
+    Alert.alert("Auto-tag failed", e?.message || "Try again later.");
+  }
+};
 
   // Viewer state
   const [viewerVisible, setViewerVisible] = useState(false);
@@ -151,6 +174,8 @@ export default function Documents({ onBack }) {
   const [viewerTitle, setViewerTitle] = useState('');
   const [viewerLoading, setViewerLoading] = useState(false);
   const [viewerType, setViewerType] = useState('pdf');
+  const [kwEditId, setKwEditId] = useState(null);
+  const [kwValue, setKwValue] = useState("");
 
   const openSummaryPicker = (doc) => {
   setSummaryPickerDoc(doc);
@@ -488,7 +513,7 @@ if (!isDetailed) {
           onPress: () => {
             setTtsText(newSummary);
             setTtsContext({ docId: doc.$id, mode: "summary", variant: "detailed" });
-            setTtsVisible(true);
+            setTtsVisible(true); 
           },
         },
         { text: "OK", style: "default" },
@@ -621,12 +646,13 @@ return title.includes(q);
             {item.summary}
           </Text>
         )}
-{/* Category tag */}
+{/* Category + Keywords */}
 <View style={{ marginTop: 8 }}>
-  <Text style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>
+  <Text style={{ fontSize: 12, color: "#6B7280", marginBottom: 4 }}>
     Category: {item.category || "None"}
   </Text>
 
+  {/* Category chips */}
   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
     {["finance", "history", "study", "legal", "work", "personal"].map((c) => {
       const active = item.category === c;
@@ -651,7 +677,13 @@ return title.includes(q);
             borderColor: active ? brand : "#E2E8F0",
           }}
         >
-          <Text style={{ fontSize: 12, color: active ? "#fff" : "#111827", fontWeight: "700" }}>
+          <Text
+            style={{
+              fontSize: 12,
+              color: active ? "#fff" : "#111827",
+              fontWeight: "700",
+            }}
+          >
             {c}
           </Text>
         </TouchableOpacity>
@@ -677,11 +709,102 @@ return title.includes(q);
         borderColor: "#E5E7EB",
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: "700" }}>Clear</Text>
+      <Text style={{ fontSize: 12, fontWeight: "700", color: "#111827" }}>
+        Clear
+      </Text>
     </TouchableOpacity>
   </View>
-</View>
 
+  {/* Keywords editor */}
+  <View style={{ marginTop: 10 }}>
+    {kwEditId === item.$id ? (
+      <View style={{ gap: 8 }}>
+        <TextInput
+          value={kwValue}
+          onChangeText={setKwValue}
+          placeholder="Keywords (comma separated)"
+          placeholderTextColor="#94A3B8"
+          style={{
+            width: "100%",
+            backgroundColor: "#F1F5F9",
+            borderRadius: 12,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            color: "#0F172A",
+          }}
+        />
+
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity
+            onPress={async () => {
+              try {
+                await updateDocFields(item.$id, { keywords: kwValue });
+                setKwEditId(null);
+                setKwValue("");
+                await load();
+              } catch {
+                Alert.alert("Update failed", "Could not save keywords.");
+              }
+            }}
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              borderRadius: 12,
+              backgroundColor: brand,
+            }}
+          >
+            <Text style={{ color: "#fff", fontWeight: "800" }}>Save</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => {
+              setKwEditId(null);
+              setKwValue("");
+            }}
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              borderRadius: 12,
+              backgroundColor: "#F1F5F9",
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+            }}
+          >
+            <Text style={{ color: "#0F172A", fontWeight: "800" }}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    ) : (
+      <TouchableOpacity
+        onPress={() => {
+          setKwEditId(item.$id);
+          setKwValue(item.keywords || "");
+        }}
+        style={{
+          alignSelf: "flex-start",
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          borderRadius: 12,
+          backgroundColor: "#F1F5F9",
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+        }}
+      >
+        <Text style={{ color: "#0F172A", fontWeight: "800" }}>
+          {item.keywords ? "Edit keywords" : "Add keywords"}
+        </Text>
+      </TouchableOpacity>
+    )}
+
+    {!!item.keywords && (
+      <Text style={{ marginTop: 6, color: "#4B5563" }}>
+        Keywords: {item.keywords}
+      </Text>
+    )}
+  </View>
+</View>
         <View style={{ flexDirection: 'row', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
           <TouchableOpacity
             onPress={() => onOpen(item)}
@@ -710,6 +833,13 @@ return title.includes(q);
             style={{ backgroundColor: '#059669', padding: 8, borderRadius: 8 }}
           >
             <Text style={{ color: '#fff' }}>Listen</Text>
+     </TouchableOpacity>
+
+             <TouchableOpacity
+            onPress={() => onAutoTag(item)}
+            style={{ backgroundColor: "#0F172A", padding: 8, borderRadius: 8 }}
+          >
+            <Text style={{ color: "#fff" }}>Auto-tag</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
