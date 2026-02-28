@@ -39,6 +39,7 @@ export const databasesClient = databases;
 // Function domains (from .env) 
 export const TTS_FUNCTION_URL = env("EXPO_PUBLIC_TTS_FUNCTION_URL", "");
 export const EXTRACT_TEXT_FUNCTION_ID = "697552940000b9d83b57";
+export const TAG_FUNCTION_ID = env("EXPO_PUBLIC_TAG_FUNCTION_ID", "");
 
 
 // summarise function URL 
@@ -122,7 +123,7 @@ export async function uploadUserDoc(userId, file) {
       userID: userId,
       title: name,
       fileId: storedFile.$id,
-      extractedText: "",
+      textContent: "",
       fileType,
       mimeType,
       summary: "",
@@ -269,6 +270,53 @@ export async function callExtractTextFunction(doc) {
 
   return parsed || { ok: true, textContent: text };
 }
+export async function callTagFunction(doc) {
+  const docId = typeof doc === "string" ? doc : doc?.$id;
+  if (!docId) throw new Error("Missing docId for tagging.");
+  if (!TAG_FUNCTION_ID) throw new Error("TAG_FUNCTION_ID not set.");
+
+  const fileId = typeof doc === "object" ? doc?.fileId : null;
+  const mimeType = typeof doc === "object" ? doc?.mimeType : null;
+  const fileUrl = fileId ? getFileDownloadUrl(fileId) : null;
+
+  const payload = {
+    docId,
+    ...(fileId ? { fileId } : {}),
+    ...(fileUrl ? { fileUrl } : {}),
+    ...(mimeType ? { mimeType } : {}),
+  };
+
+  const execution = await functions.createExecution(
+    TAG_FUNCTION_ID,
+    JSON.stringify(payload),
+    false
+  );
+
+  const bodyText = execution?.responseBody || "";
+  let parsed = null;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {}
+
+  if (parsed?.error) throw new Error(parsed.error);
+
+  const category = parsed?.category;
+  const keywords = parsed?.keywords;
+
+  if (category || keywords) {
+    try {
+      await updateDocFields(docId, {
+        ...(category ? { category } : {}),
+        ...(keywords ? { keywords } : {}),
+      });
+    } catch (e) {
+      console.log("updateDocFields(tag) failed:", e?.message || e);
+    }
+  }
+
+  return parsed || { ok: true, category: "", keywords: "" };
+}
+
 // Library
 function savedItemPermissions(userId) {
   if (!userId) return [];
