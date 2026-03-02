@@ -151,6 +151,7 @@ export default function Documents({ onBack }) {
   const [categoryModalDoc, setCategoryModalDoc] = useState(null);
   const [categoryChoice, setCategoryChoice] = useState("");
   const [categoryCustom, setCategoryCustom] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [taggingId, setTaggingId] = useState(null);
 
  const onAutoTag = async (doc) => {
@@ -174,7 +175,7 @@ export default function Documents({ onBack }) {
 
     await load();
 
-    Alert.alert("Done", "Category and keywords updated.");
+    Alert.alert("Category and keywords updated.");
   } catch (e) {
     Alert.alert("Tagging failed", e?.message || "Try again later.");
   } finally {
@@ -620,24 +621,92 @@ const onListenDoc = async (doc) => {
     ]);
   };
 
- const filteredFiles = files
+  const CATEGORY_PRESETS = ["work", "study", "legal", "finance", "personal", "history", "other"];
+
+const normaliseCategory = (value) => {
+  const v = (value || "").trim().toLowerCase();
+  return v;
+};
+
+const getFolderCards = () => {
+  const counts = {};
+
+  for (const d of files) {
+    const c = normaliseCategory(d.category);
+    const key = c || "uncategorised";
+    counts[key] = (counts[key] || 0) + 1;
+  }
+
+  const cards = [{ key: "all", label: "All", count: files.length }];
+
+  for (const c of CATEGORY_PRESETS) {
+    const count = counts[c] || 0;
+    if (count > 0) cards.push({ key: c, label: c, count });
+  }
+
+  const unc = counts["uncategorised"] || 0;
+  if (unc > 0) cards.push({ key: "uncategorised", label: "Uncategorised", count: unc });
+
+  return cards;
+};
+
+const folderCards = getFolderCards();
+
+const filteredFiles = files
   .filter((doc) => {
-    if (filter === 'all') return true;
+    if (filter === "all") return true;
     const t = deriveType(doc);
-    if (filter === 'pdf') return t === 'pdf';
-    if (filter === 'image') return t === 'image';
-    if (filter === 'other') return t === 'other';
+    if (filter === "pdf") return t === "pdf";
+    if (filter === "image") return t === "image";
+    if (filter === "other") return t === "other";
     return true;
   })
   .filter((doc) => {
     const q = searchQuery.trim().toLowerCase();
-if (!q) return true;
+    if (!q) return true;
 
-const title = (doc.title || "").toLowerCase();
-return title.includes(q);
+    const title = (doc.title || "").toLowerCase();
+    return title.includes(q);
+  })
+  .filter((doc) => {
+    if (!selectedCategory || selectedCategory === "all") return true;
 
+    const c = normaliseCategory(doc.category);
+
+    if (selectedCategory === "uncategorised") return !c;
+    return c === selectedCategory;
   });
 
+  const FolderCard = ({ item }) => {
+  const active =
+    (selectedCategory === null && item.key === "all") || selectedCategory === item.key;
+
+  return (
+    <TouchableOpacity
+      onPress={() => {
+        if (item.key === "all") setSelectedCategory(null);
+        else setSelectedCategory(item.key);
+      }}
+      style={{
+        width: "48%",
+        backgroundColor: active ? "rgba(99,102,241,0.12)" : "#F5F7FB",
+        borderRadius: 14,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: active ? brand : "#E5E7EB",
+        marginBottom: 10,
+      }}
+    >
+      <Text style={{ fontWeight: "800", fontSize: 14, textTransform: "capitalize" }}>
+        {item.label}
+      </Text>
+      <Text style={{ marginTop: 6, color: "#6B7280", fontSize: 12 }}>
+        {item.count} {item.count === 1 ? "file" : "files"}
+      </Text>
+    </TouchableOpacity>
+  );
+};
+ 
   const Item = ({ item }) => {
     const type = deriveType(item);
     const { label, bg } = typeLabelAndColor(type);
@@ -669,7 +738,7 @@ return title.includes(q);
   {/* Category chips */}
   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
     {["finance", "history", "study", "legal", "work", "personal"].map((c) => {
-      const active = item.category === c;
+     const active = normaliseCategory(item.category) === c;
 
       return (
         <TouchableOpacity
@@ -939,33 +1008,76 @@ return title.includes(q);
 
         <Line />
 
-<TextInput
-  value={searchQuery}
-  onChangeText={setSearchQuery}
-  placeholder="Search documents..."
-  placeholderTextColor="#9CA3AF"
-  style={{
-    width: '100%',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginTop: 14,
-    marginBottom: 12,
-  }}
+
+   <FlatList
+  data={filteredFiles}
+  keyExtractor={(item) => item.$id}
+  renderItem={({ item }) => <Item item={item} />}
+  refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+  contentContainerStyle={{ paddingBottom: 80, paddingTop: 12 }}
+  ListHeaderComponent={
+    <View>
+      <TextInput
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder="Search documents..."
+        placeholderTextColor="#9CA3AF"
+        style={{
+          width: "100%",
+          backgroundColor: "#F3F4F6",
+          borderRadius: 12,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          marginTop: 14,
+          marginBottom: 12,
+        }}
+      />
+
+      {selectedCategory ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 12,
+          }}
+        >
+          <TouchableOpacity
+            onPress={() => setSelectedCategory(null)}
+            style={{
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              borderRadius: 999,
+              backgroundColor: "#F1F5F9",
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+            }}
+          >
+            <Text style={{ fontWeight: "800" }}>All folders</Text>
+          </TouchableOpacity>
+
+          <Text style={{ color: "#6B7280", fontWeight: "700" }}>
+            {(selectedCategory || "").toString().toUpperCase()}
+          </Text>
+        </View>
+      ) : (
+        <View style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }}>
+            <Text style={{ fontWeight: "900", fontSize: 16 }}>Folders</Text>
+          </View>
+
+          <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
+            {folderCards.map((c) => (
+              <FolderCard key={c.key} item={c} />
+            ))}
+          </View>
+
+          <Text style={{ fontWeight: "900", fontSize: 16, marginTop: 8 }}>Recent documents</Text>
+        </View>
+      )}
+    </View>
+  }
 />
-
-    <FlatList
-          data={filteredFiles}
-          keyExtractor={(item) => item.$id}
-          renderItem={({ item }) => <Item item={item} />}
-          refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-          contentContainerStyle={{ paddingBottom: 80, paddingTop: 12 }}
-        />
-
-        <TouchableOpacity onPress={onBack} style={{ marginTop: 16 }}>
-          <Text style={{ color: brand, textAlign: 'center' }}>Back</Text>
-        </TouchableOpacity>
       </InnerContainer>
 
       {/* TTS Modal */}
