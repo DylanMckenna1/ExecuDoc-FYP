@@ -21,7 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import Pdf from 'react-native-pdf';
 import { Buffer } from 'buffer';
-import { saveToLibrary } from '../services/appwrite';
+import { saveToLibrary, getDocumentById } from "../services/appwrite";
 
 import {
   StyledContainer,
@@ -153,7 +153,7 @@ export default function Documents({ onBack }) {
   const [categoryCustom, setCategoryCustom] = useState("");
   const [taggingId, setTaggingId] = useState(null);
 
-  const onAutoTag = async (doc) => {
+ const onAutoTag = async (doc) => {
   const docId = doc?.$id;
   if (!docId) {
     Alert.alert("Tagging failed", "Missing document id.");
@@ -163,16 +163,15 @@ export default function Documents({ onBack }) {
   try {
     setTaggingId(docId);
 
-    // Ensured textContent 
     const hasText = (doc?.textContent || "").trim().length > 0;
+
     if (!hasText) {
-      await callExtractTextFunction(doc); // pass doc
+      await callExtractTextFunction(doc);
     }
 
-    // tag function 
-  await callTagFunction(doc);
+    const latestDoc = await getDocumentById(docId);
+    await callTagFunction(latestDoc);
 
-    // Refresh list 
     await load();
 
     Alert.alert("Done", "Category and keywords updated.");
