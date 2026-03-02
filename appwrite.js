@@ -32,14 +32,13 @@ export const BUCKET_ID = "69202f250019fb07635d";
 
 export const SAVED_ITEMS_COLLECTION_ID = "savedItems";
 
-export { Query };
-export const databasesClient = databases; 
-
+export { Query }; 
 
 // Function domains (from .env) 
 export const TTS_FUNCTION_URL = env("EXPO_PUBLIC_TTS_FUNCTION_URL", "");
 export const EXTRACT_TEXT_FUNCTION_ID = "697552940000b9d83b57";
 export const TAG_FUNCTION_ID = env("EXPO_PUBLIC_TAG_FUNCTION_ID", "");
+console.log("TAG_FUNCTION_ID:", TAG_FUNCTION_ID);
 
 
 // summarise function URL 
@@ -52,6 +51,8 @@ export const account = new Account(client);
 const databases = new Databases(client);
 const storage = new Storage(client);
 const functions = new Functions(client);
+
+export const databasesClient = databases;
 
 async function getJwtString() {
   const j = await account.createJWT();
@@ -95,6 +96,124 @@ function guessFileType(mimeOrName) {
   return "other";
 }
 
+const ALLOWED_CATEGORIES = ["work", "study", "legal", "finance", "history", "personal", "other"];
+
+function normaliseCategory(value) {
+  return (value || "").toString().trim().toLowerCase();
+}
+
+function toKeywordString(keywords) {
+  if (Array.isArray(keywords)) return keywords.join(" ").toLowerCase();
+  return (keywords || "").toString().toLowerCase();
+}
+
+function mapCategory(rawCategory, keywords, title) {
+  const c = normaliseCategory(rawCategory);
+  const kw = toKeywordString(keywords);
+  const t = (title || "").toString().toLowerCase();
+
+  const combined = `${c} ${kw} ${t}`.replace(/\s+/g, " ").trim();
+
+  // finance
+  if (
+    combined.includes("account") ||
+    combined.includes("accounting") ||
+    combined.includes("invoice") ||
+    combined.includes("receipt") ||
+    combined.includes("bank") ||
+    combined.includes("statement") ||
+    combined.includes("tax") ||
+    combined.includes("vat") ||
+    combined.includes("payroll") ||
+    combined.includes("audit") ||
+    combined.includes("finance")
+  ) {
+    return "finance";
+  }
+
+  // legal
+  if (
+    combined.includes("nda") ||
+    combined.includes("contract") ||
+    combined.includes("agreement") ||
+    combined.includes("terms") ||
+    combined.includes("policy") ||
+    combined.includes("gdpr") ||
+    combined.includes("legal")
+  ) {
+    return "legal";
+  }
+
+  // work
+  if (
+    combined.includes("cv") ||
+    combined.includes("resume") ||
+    combined.includes("interview") ||
+    combined.includes("job") ||
+    combined.includes("employment") ||
+    combined.includes("offer") ||
+    combined.includes("onboarding") ||
+    combined.includes("hr") ||
+    combined.includes("work")
+  ) {
+    return "work";
+  }
+
+  // study
+  if (
+    combined.includes("leaving cert") ||
+    combined.includes("junior cert") ||
+    combined.includes("exam") ||
+    combined.includes("essay") ||
+    combined.includes("assignment") ||
+    combined.includes("homework") ||
+    combined.includes("lecture") ||
+    combined.includes("notes") ||
+    combined.includes("college") ||
+    combined.includes("school") ||
+    combined.includes("study") ||
+    combined.includes("thesis") ||
+    combined.includes("project")
+  ) {
+    return "study";
+  }
+
+  // history
+  if (
+    combined.includes("history") ||
+    combined.includes("world war") ||
+    combined.includes("ww1") ||
+    combined.includes("ww2") ||
+    combined.includes("hitler") ||
+    combined.includes("nazi") ||
+    combined.includes("allies") ||
+    combined.includes("battle") ||
+    combined.includes("treaty") ||
+    combined.includes("revolution") ||
+    combined.includes("1916")
+  ) {
+    return "history";
+  }
+
+  // personal
+  if (
+    combined.includes("personal") ||
+    combined.includes("family") ||
+    combined.includes("travel") ||
+    combined.includes("holiday") ||
+    combined.includes("gym") ||
+    combined.includes("health") ||
+    combined.includes("journal") ||
+    combined.includes("diary")
+  ) {
+    return "personal";
+  }
+
+  if (ALLOWED_CATEGORIES.includes(c)) return c;
+
+  return "other";
+}
+
 // Document and storage 
 export async function uploadUserDoc(userId, file) {
   if (!userId) throw new Error("Missing userId (you must be logged in).");
@@ -119,16 +238,17 @@ export async function uploadUserDoc(userId, file) {
     DATABASE_ID,
     DOCUMENTS_COLLECTION_ID,
     ID.unique(),
-    {
+        {
       userID: userId,
       title: name,
       fileId: storedFile.$id,
-      textContent: "",
       fileType,
       mimeType,
-      summary: "",
       textContent: "",
+      summary: "",
       ttsSummaryParts: "",
+      category: "",
+      keywords: "",
     }
   );
 
@@ -143,6 +263,11 @@ export async function listUserDocs(userId) {
     [Query.equal("userID", userId), Query.orderDesc("$createdAt")]
   );
   return res.documents || [];
+}
+
+export async function getDocumentById(docId) {
+  if (!docId) throw new Error("Missing docId");
+  return databases.getDocument(DATABASE_ID, DOCUMENTS_COLLECTION_ID, docId);
 }
 
 export async function deleteUserDoc(docId, fileId) {
@@ -168,7 +293,7 @@ export async function updateDocFields(docId, data) {
 }
 
 export async function attachExtractedText(docId, text) {
-  return updateDocFields(docId, { extractedText: text || "" });
+  return updateDocFields(docId, { textContent: text || "" });
 }
 
 export async function attachTextContent(docId, text) {
@@ -219,6 +344,32 @@ export async function callSummariseFunction(doc) {
   return parsed || { ok: true, summary: bodyText };
 }
 
+async function executeFunctionAndWait(functionId, payload, timeoutMs = 120000) {
+  const created = await functions.createExecution(
+    functionId,
+    JSON.stringify(payload),
+    true
+  );
+
+  const executionId = created?.$id;
+  if (!executionId) return created;
+
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const latest = await functions.getExecution(functionId, executionId);
+
+    const status = latest?.status;
+    if (status === "completed" || status === "failed") {
+      return latest;
+    }
+
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  throw new Error("Function execution timed out.");
+}
+
 // Extract full text 
 export async function callExtractTextFunction(doc) {
   const docId = typeof doc === "string" ? doc : doc?.$id;
@@ -238,11 +389,10 @@ export async function callExtractTextFunction(doc) {
   };
 
   // Execute 
-  const execution = await functions.createExecution(
-    EXTRACT_TEXT_FUNCTION_ID,
-    JSON.stringify(payload),
-    false
-  );
+  const execution = await executeFunctionAndWait(
+  EXTRACT_TEXT_FUNCTION_ID,
+  payload
+);
 
   const bodyText = execution?.responseBody || "";
   console.log("extract raw response:", bodyText);
@@ -286,11 +436,10 @@ export async function callTagFunction(doc) {
     ...(mimeType ? { mimeType } : {}),
   };
 
-  const execution = await functions.createExecution(
-    TAG_FUNCTION_ID,
-    JSON.stringify(payload),
-    false
-  );
+ const execution = await executeFunctionAndWait(
+  TAG_FUNCTION_ID,
+  payload
+);
 
   const bodyText = execution?.responseBody || "";
   let parsed = null;
@@ -303,16 +452,18 @@ export async function callTagFunction(doc) {
   const category = parsed?.category;
   const keywords = parsed?.keywords;
 
-  if (category || keywords) {
-    try {
-      await updateDocFields(docId, {
-        ...(category ? { category } : {}),
-        ...(keywords ? { keywords } : {}),
-      });
-    } catch (e) {
-      console.log("updateDocFields(tag) failed:", e?.message || e);
-    }
+  const mappedCategory = mapCategory(category, keywords, doc?.title);
+
+ if (mappedCategory || keywords) {
+  try {
+    await updateDocFields(docId, {
+      category: mappedCategory,
+      ...(keywords ? { keywords } : {}),
+    });
+  } catch (e) {
+    console.log("updateDocFields(tag) failed:", e?.message || e);
   }
+}
 
   return parsed || { ok: true, category: "", keywords: "" };
 }

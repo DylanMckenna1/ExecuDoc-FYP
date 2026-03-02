@@ -154,8 +154,10 @@ export default function Documents({ onBack }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [taggingId, setTaggingId] = useState(null);
 
- const onAutoTag = async (doc) => {
+const onAutoTag = async (doc, options = {}) => {
+  const silent = options?.silent === true;
   const docId = doc?.$id;
+
   if (!docId) {
     Alert.alert("Tagging failed", "Missing document id.");
     return;
@@ -165,7 +167,6 @@ export default function Documents({ onBack }) {
     setTaggingId(docId);
 
     const hasText = (doc?.textContent || "").trim().length > 0;
-
     if (!hasText) {
       await callExtractTextFunction(doc);
     }
@@ -175,14 +176,24 @@ export default function Documents({ onBack }) {
 
     await load();
 
-    Alert.alert("Category and keywords updated.");
+    if (!silent) {
+      Alert.alert("Done", "Category and keywords updated.");
+    }
   } catch (e) {
-    Alert.alert("Tagging failed", e?.message || "Try again later.");
+    if (!silent) {
+      Alert.alert("Tagging failed", e?.message || "Try again later.");
+    } else {
+      console.log("silent tagging failed:", e?.message || e);
+    }
   } finally {
     setTaggingId(null);
   }
 };
-  
+
+const autoCategoriseSilently = (doc) => {
+  onAutoTag(doc, { silent: true });
+};
+
   // Viewer state
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerUri, setViewerUri] = useState(null);
@@ -291,14 +302,16 @@ export default function Documents({ onBack }) {
       const asset = result.assets?.[0];
       if (!asset) return;
 
-      await uploadUserDoc(userId, {
-        uri: asset.uri,
-        name: asset.name || 'document',
-        type: asset.mimeType || 'application/octet-stream',
-        size: asset.size || 0,
-      });
+  const createdDoc = await uploadUserDoc(userId, {
+  uri: asset.uri,
+  name: asset.name || "document",
+  type: asset.mimeType || "application/octet-stream",
+  size: asset.size || 0,
+});
 
-      await load();
+autoCategoriseSilently(createdDoc);
+
+await load();
     } catch (e) {
       console.log('upload file error', e);
       Alert.alert('Upload failed', e?.message || 'Please try again.');
@@ -328,14 +341,17 @@ export default function Documents({ onBack }) {
       const asset = result.assets?.[0];
       if (!asset) return;
 
-      await uploadUserDoc(userId, {
-        uri: asset.uri,
-        name: `Photo_${Date.now()}.jpg`,
-        type: asset.mimeType || 'image/jpeg',
-        size: asset.fileSize || 0,
-      });
+  const createdDoc = await uploadUserDoc(userId, {
+  uri: asset.uri,
+  name: `Photo_${Date.now()}.jpg`,
+  type: asset.mimeType || "image/jpeg",
+  size: asset.fileSize || 0,
+});
 
-      await load();
+autoCategoriseSilently(createdDoc);
+
+await load();
+
     } catch (e) {
       console.log('take photo error', e);
       Alert.alert('Upload failed', e?.message || 'Please try again.');
