@@ -10,6 +10,7 @@ import {
   Modal,
   ActivityIndicator,
   ScrollView,
+  StyleSheet,
   TextInput,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -150,24 +151,38 @@ export default function Documents({ onBack }) {
   const [categoryModalDoc, setCategoryModalDoc] = useState(null);
   const [categoryChoice, setCategoryChoice] = useState("");
   const [categoryCustom, setCategoryCustom] = useState("");
+  const [taggingId, setTaggingId] = useState(null);
 
-  
   const onAutoTag = async (doc) => {
+  const docId = doc?.$id;
+  if (!docId) {
+    Alert.alert("Tagging failed", "Missing document id.");
+    return;
+  }
+
   try {
-    const hasText = (doc.textContent || "").trim().length > 0;
+    setTaggingId(docId);
+
+    // Ensured textContent 
+    const hasText = (doc?.textContent || "").trim().length > 0;
     if (!hasText) {
-      await callExtractTextFunction(doc);
+      await callExtractTextFunction(doc); // pass doc
     }
 
-    await callTagFunction(doc);
+    // tag function 
+  await callTagFunction(doc);
 
+    // Refresh list 
     await load();
-    Alert.alert("Tagged", "Category and keywords updated.");
+
+    Alert.alert("Done", "Category and keywords updated.");
   } catch (e) {
-    Alert.alert("Auto-tag failed", e?.message || "Try again later.");
+    Alert.alert("Tagging failed", e?.message || "Try again later.");
+  } finally {
+    setTaggingId(null);
   }
 };
-
+  
   // Viewer state
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerUri, setViewerUri] = useState(null);
@@ -835,13 +850,21 @@ return title.includes(q);
             <Text style={{ color: '#fff' }}>Listen</Text>
      </TouchableOpacity>
 
-             <TouchableOpacity
-            onPress={() => onAutoTag(item)}
-            style={{ backgroundColor: "#0F172A", padding: 8, borderRadius: 8 }}
-          >
-            <Text style={{ color: "#fff" }}>Auto-tag</Text>
-          </TouchableOpacity>
-
+     <TouchableOpacity
+  onPress={() => onAutoTag(item)}
+  disabled={taggingId === item.$id}
+  style={{
+    backgroundColor: taggingId === item.$id ? "#334155" : "#0F172A",
+    padding: 8,
+    borderRadius: 8,
+    opacity: taggingId === item.$id ? 0.8 : 1,
+  }}
+>
+  <Text style={{ color: "#fff", fontWeight: "700" }}>
+    {taggingId === item.$id ? "Categorising…" : "Categorise"}
+  </Text>
+</TouchableOpacity>
+ 
           <TouchableOpacity
             onPress={() => onDelete(item)}
             style={{ backgroundColor: '#111827', padding: 8, borderRadius: 8 }}
