@@ -154,6 +154,12 @@ export default function Documents({ onBack }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [taggingId, setTaggingId] = useState(null);
 
+const [menuVisible, setMenuVisible] = useState(false);
+const [menuDoc, setMenuDoc] = useState(null);
+
+const [kwModalVisible, setKwModalVisible] = useState(false);
+const [kwModalDoc, setKwModalDoc] = useState(null);
+
 const onAutoTag = async (doc, options = {}) => {
   const silent = options?.silent === true;
   const docId = doc?.$id;
@@ -207,6 +213,50 @@ const autoCategoriseSilently = (doc) => {
   setSummaryPickerDoc(doc);
   setSummaryPickerMode("short"); // default
   setSummaryPickerVisible(true);
+};
+
+const openMenu = (doc) => {
+  setMenuDoc(doc);
+  setMenuVisible(true);
+};
+
+const closeMenu = () => {
+  setMenuVisible(false);
+  setMenuDoc(null);
+};
+
+const openKeywordsModal = (doc) => {
+  setKwModalDoc(doc);
+  setKwValue(doc?.keywords || "");
+  setKwModalVisible(true);
+};
+
+const closeKeywordsModal = () => {
+  setKwModalVisible(false);
+  setKwModalDoc(null);
+  setKwValue("");
+};
+
+const openCategoryModalForDoc = (doc) => {
+  setCategoryModalDoc(doc);
+  setCategoryChoice(normaliseCategory(doc?.category) || "");
+  setCategoryCustom("");
+  setCategoryModalVisible(true);
+};
+
+const handleMenuAction = async (action) => {
+  const doc = menuDoc;
+  if (!doc) return;
+
+  closeMenu();
+
+  if (action === "open") onOpen(doc);
+  if (action === "summarise") openSummaryPicker(doc);
+  if (action === "listen") onListenDoc(doc);
+  if (action === "categorise") onAutoTag(doc);
+  if (action === "category") openCategoryModalForDoc(doc);
+  if (action === "keywords") openKeywordsModal(doc);
+  if (action === "delete") onDelete(doc);
 };
 
   // TTS modal state
@@ -723,243 +773,82 @@ const filteredFiles = files
   );
 };
  
-  const Item = ({ item }) => {
-    const type = deriveType(item);
-    const { label, bg } = typeLabelAndColor(type);
-    const isSummarising = summarisingId === item.$id;
+const Item = ({ item }) => {
+  const type = deriveType(item);
+  const { label, bg } = typeLabelAndColor(type);
 
-    return (
-      <View style={{ backgroundColor: '#F5F7FB', padding: 16, borderRadius: 14, marginBottom: 10 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-          <Text style={{ fontWeight: '700', flex: 1 }} numberOfLines={1}>
-            {item.title}
-          </Text>
+  const categoryText = (normaliseCategory(item.category) || "uncategorised")
+    .replace(/^\w/, (c) => c.toUpperCase());
 
-          <View style={{ backgroundColor: bg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, marginLeft: 8 }}>
-            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{label}</Text>
-          </View>
-        </View>
-
-        {!!item.summary && (
-          <Text numberOfLines={4} style={{ marginTop: 6, color: '#4B5563' }}>
-            {item.summary}
-          </Text>
-        )}
-{/* Category + Keywords */}
-<View style={{ marginTop: 8 }}>
-  <Text style={{ fontSize: 12, color: "#6B7280", marginBottom: 4 }}>
-    Category: {item.category || "None"}
-  </Text>
-
-  {/* Category chips */}
-  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-    {["finance", "history", "study", "legal", "work", "personal"].map((c) => {
-     const active = normaliseCategory(item.category) === c;
-
-      return (
-        <TouchableOpacity
-          key={c}
-          onPress={async () => {
-            try {
-              await updateDocFields(item.$id, { category: c });
-              await load();
-            } catch (e) {
-              Alert.alert("Update failed", "Could not set category.");
-            }
-          }}
-          style={{
-            paddingVertical: 6,
-            paddingHorizontal: 10,
-            borderRadius: 999,
-            backgroundColor: active ? brand : "#F1F5F9",
-            borderWidth: 1,
-            borderColor: active ? brand : "#E2E8F0",
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 12,
-              color: active ? "#fff" : "#111827",
-              fontWeight: "700",
-            }}
-          >
-            {c}
-          </Text>
-        </TouchableOpacity>
-      );
-    })}
-
-    {/* Clear button */}
-    <TouchableOpacity
-      onPress={async () => {
-        try {
-          await updateDocFields(item.$id, { category: "" });
-          await load();
-        } catch {
-          Alert.alert("Update failed", "Could not clear category.");
-        }
-      }}
+  return (
+    <View
       style={{
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        borderRadius: 999,
-        backgroundColor: "#fff",
+        backgroundColor: "#F5F7FB",
+        padding: 14,
+        borderRadius: 14,
+        marginBottom: 10,
         borderWidth: 1,
         borderColor: "#E5E7EB",
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: "700", color: "#111827" }}>
-        Clear
-      </Text>
-    </TouchableOpacity>
-  </View>
-
-  {/* Keywords editor */}
-  <View style={{ marginTop: 10 }}>
-    {kwEditId === item.$id ? (
-      <View style={{ gap: 8 }}>
-        <TextInput
-          value={kwValue}
-          onChangeText={setKwValue}
-          placeholder="Keywords (comma separated)"
-          placeholderTextColor="#94A3B8"
-          style={{
-            width: "100%",
-            backgroundColor: "#F1F5F9",
-            borderRadius: 12,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
-            borderWidth: 1,
-            borderColor: "#E2E8F0",
-            color: "#0F172A",
-          }}
-        />
-
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <TouchableOpacity
-            onPress={async () => {
-              try {
-                await updateDocFields(item.$id, { keywords: kwValue });
-                setKwEditId(null);
-                setKwValue("");
-                await load();
-              } catch {
-                Alert.alert("Update failed", "Could not save keywords.");
-              }
-            }}
-            style={{
-              paddingVertical: 10,
-              paddingHorizontal: 14,
-              borderRadius: 12,
-              backgroundColor: brand,
-            }}
-          >
-            <Text style={{ color: "#fff", fontWeight: "800" }}>Save</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => {
-              setKwEditId(null);
-              setKwValue("");
-            }}
-            style={{
-              paddingVertical: 10,
-              paddingHorizontal: 14,
-              borderRadius: 12,
-              backgroundColor: "#F1F5F9",
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-            }}
-          >
-            <Text style={{ color: "#0F172A", fontWeight: "800" }}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    ) : (
-      <TouchableOpacity
-        onPress={() => {
-          setKwEditId(item.$id);
-          setKwValue(item.keywords || "");
-        }}
-        style={{
-          alignSelf: "flex-start",
-          paddingVertical: 8,
-          paddingHorizontal: 12,
-          borderRadius: 12,
-          backgroundColor: "#F1F5F9",
-          borderWidth: 1,
-          borderColor: "#E2E8F0",
-        }}
-      >
-        <Text style={{ color: "#0F172A", fontWeight: "800" }}>
-          {item.keywords ? "Edit keywords" : "Add keywords"}
-        </Text>
-      </TouchableOpacity>
-    )}
-
-    {!!item.keywords && (
-      <Text style={{ marginTop: 6, color: "#4B5563" }}>
-        Keywords: {item.keywords}
-      </Text>
-    )}
-  </View>
-</View>
-        <View style={{ flexDirection: 'row', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
-          <TouchableOpacity
-            onPress={() => onOpen(item)}
-            style={{ backgroundColor: brand, padding: 8, borderRadius: 8 }}
-          >
-            <Text style={{ color: '#fff' }}>Open</Text>
-          </TouchableOpacity>
-
-         <TouchableOpacity
-          onPress={() => openSummaryPicker(item)}
-            disabled={isSummarising}
-            style={{
-              backgroundColor: isSummarising ? '#A5B4FC' : '#4F46E5',
-              padding: 8,
-              borderRadius: 8,
-              opacity: isSummarising ? 0.85 : 1,
-            }}
-          >
-            <Text style={{ color: '#fff' }}>
-              {isSummarising ? 'Summarising…' : 'Summarise'}
+      <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+        <TouchableOpacity
+          onPress={() => onOpen(item)}
+          style={{ flex: 1, paddingRight: 10 }}
+          activeOpacity={0.85}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text style={{ fontWeight: "800", flex: 1 }} numberOfLines={1}>
+              {item.title}
             </Text>
-          </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => onListenDoc(item)}
-            style={{ backgroundColor: '#059669', padding: 8, borderRadius: 8 }}
-          >
-            <Text style={{ color: '#fff' }}>Listen</Text>
-     </TouchableOpacity>
+            <View
+              style={{
+                backgroundColor: bg,
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 999,
+                marginLeft: 8,
+              }}
+            >
+              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+                {label}
+              </Text>
+            </View>
+          </View>
 
-     <TouchableOpacity
-  onPress={() => onAutoTag(item)}
-  disabled={taggingId === item.$id}
-  style={{
-    backgroundColor: taggingId === item.$id ? "#334155" : "#0F172A",
-    padding: 8,
-    borderRadius: 8,
-    opacity: taggingId === item.$id ? 0.8 : 1,
-  }}
->
-  <Text style={{ color: "#fff", fontWeight: "700" }}>
-    {taggingId === item.$id ? "Categorising…" : "Categorise"}
-  </Text>
-</TouchableOpacity>
- 
-          <TouchableOpacity
-            onPress={() => onDelete(item)}
-            style={{ backgroundColor: '#111827', padding: 8, borderRadius: 8 }}
-          >
-            <Text style={{ color: '#fff' }}>Delete</Text>
-          </TouchableOpacity>
-        </View>
+          <Text style={{ marginTop: 6, fontSize: 12, color: "#6B7280" }} numberOfLines={1}>
+            {categoryText}
+          </Text>
+
+          {!!item.summary && (
+            <Text style={{ marginTop: 8, color: "#4B5563" }} numberOfLines={2}>
+              {item.summary}
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => openMenu(item)}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "#EEF2FF",
+            borderWidth: 1,
+            borderColor: "#E0E7FF",
+          }}
+        >
+          <Text style={{ fontSize: 22, lineHeight: 22, fontWeight: "900", color: brand }}>
+            ⋯
+          </Text>
+        </TouchableOpacity>
       </View>
-    );
-  };
-
+    </View>
+  );
+};
   // play cached parts 
   const playWithCache = async ({ doc, mode, variant, text }) => {
   const cache = readTtsCache(doc);
@@ -1093,8 +982,166 @@ const filteredFiles = files
       )}
     </View>
   }
-/>
-      </InnerContainer>
+/> </InnerContainer>
+
+<Modal
+  visible={menuVisible}
+  transparent
+  animationType="fade"
+  onRequestClose={closeMenu}
+>
+  <TouchableOpacity
+    activeOpacity={1}
+    onPress={closeMenu}
+    style={{
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      justifyContent: "flex-end",
+    }}
+  >
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={() => {}}
+      style={{
+        backgroundColor: "#fff",
+        padding: 16,
+        borderTopLeftRadius: 18,
+        borderTopRightRadius: 18,
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
+      }}
+    >
+      <Text style={{ fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
+        Actions
+      </Text>
+
+      {[
+        { key: "open", label: "Open" },
+        { key: "summarise", label: "Summarise" },
+        { key: "listen", label: "Listen" },
+        { key: "categorise", label: "Categorise" },
+        { key: "category", label: "Change category" },
+        { key: "keywords", label: "Edit keywords" },
+        { key: "delete", label: "Delete" },
+      ].map((a) => (
+        <TouchableOpacity
+          key={a.key}
+          onPress={() => handleMenuAction(a.key)}
+          style={{
+            paddingVertical: 12,
+            borderTopWidth: 1,
+            borderTopColor: "#F1F5F9",
+          }}
+        >
+          <Text style={{ fontSize: 15, fontWeight: "700" }}>{a.label}</Text>
+        </TouchableOpacity>
+      ))}
+
+      <TouchableOpacity
+        onPress={closeMenu}
+        style={{
+          marginTop: 10,
+          paddingVertical: 12,
+          borderRadius: 12,
+          backgroundColor: "#F1F5F9",
+          alignItems: "center",
+        }}
+      >
+        <Text style={{ fontWeight: "900" }}>Cancel</Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  </TouchableOpacity>
+</Modal>
+
+<Modal
+  visible={kwModalVisible}
+  transparent
+  animationType="fade"
+  onRequestClose={closeKeywordsModal}
+>
+  <TouchableOpacity
+    activeOpacity={1}
+    onPress={closeKeywordsModal}
+    style={{
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      justifyContent: "center",
+      padding: 18,
+    }}
+  >
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={() => {}}
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
+      }}
+    >
+      <Text style={{ fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
+        Keywords
+      </Text>
+
+      <TextInput
+        value={kwValue}
+        onChangeText={setKwValue}
+        placeholder="Comma separated keywords"
+        placeholderTextColor="#94A3B8"
+        style={{
+          width: "100%",
+          backgroundColor: "#F1F5F9",
+          borderRadius: 12,
+          paddingHorizontal: 14,
+          paddingVertical: 10,
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+          color: "#0F172A",
+        }}
+      />
+
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+        <TouchableOpacity
+          onPress={async () => {
+            try {
+              if (!kwModalDoc?.$id) return;
+              await updateDocFields(kwModalDoc.$id, { keywords: kwValue });
+              closeKeywordsModal();
+              await load();
+            } catch {
+              Alert.alert("Update failed", "Could not save keywords.");
+            }
+          }}
+          style={{
+            flex: 1,
+            paddingVertical: 12,
+            borderRadius: 12,
+            backgroundColor: brand,
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "900" }}>Save</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={closeKeywordsModal}
+          style={{
+            flex: 1,
+            paddingVertical: 12,
+            borderRadius: 12,
+            backgroundColor: "#F1F5F9",
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ color: "#0F172A", fontWeight: "900" }}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  </TouchableOpacity>
+</Modal>
 
       {/* TTS Modal */}
       <Modal
