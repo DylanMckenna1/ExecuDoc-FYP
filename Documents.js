@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import Pdf from 'react-native-pdf';
 import { Buffer } from 'buffer';
+import { Ionicons } from "@expo/vector-icons";
 import { saveToLibrary, getDocumentById } from "../services/appwrite";
 
 import {
@@ -225,6 +226,13 @@ const closeMenu = () => {
   setMenuDoc(null);
 };
 
+const closeCategoryModal = () => {
+  setCategoryModalVisible(false);
+  setCategoryModalDoc(null);
+  setCategoryChoice("");
+  setCategoryCustom("");
+};
+
 const openKeywordsModal = (doc) => {
   setKwModalDoc(doc);
   setKwValue(doc?.keywords || "");
@@ -382,7 +390,7 @@ await load();
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaType.IMAGE,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.8,
       });
 
@@ -744,30 +752,47 @@ const filteredFiles = files
   });
 
   const FolderCard = ({ item }) => {
-  const active =
-    (selectedCategory === null && item.key === "all") || selectedCategory === item.key;
+  const selected = selectedCategory === item.key;
 
   return (
     <TouchableOpacity
-      onPress={() => {
-        if (item.key === "all") setSelectedCategory(null);
-        else setSelectedCategory(item.key);
-      }}
+      onPress={() => setSelectedCategory(item.key)}
+      activeOpacity={0.85}
       style={{
         width: "48%",
-        backgroundColor: active ? "rgba(99,102,241,0.12)" : "#F5F7FB",
-        borderRadius: 14,
         padding: 14,
+        borderRadius: 16,
+        backgroundColor: selected ? "#EEF2FF" : "#FFFFFF",
         borderWidth: 1,
-        borderColor: active ? brand : "#E5E7EB",
-        marginBottom: 10,
+        borderColor: selected ? brand : "#E5E7EB",
+        marginBottom: 12,
+        shadowColor: "#000",
+        shadowOpacity: 0.06,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 6 },
       }}
     >
-      <Text style={{ fontWeight: "800", fontSize: 14, textTransform: "capitalize" }}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <View
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 12,
+            backgroundColor: selected ? brand : "#EEF2FF",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="folder-outline" size={18} color={selected ? "#fff" : brand} />
+        </View>
+
+        <Text style={{ fontSize: 12, color: "#6B7280", fontWeight: "800" }}>
+          {item.count} {item.count === 1 ? "file" : "files"}
+        </Text>
+      </View>
+
+      <Text style={{ marginTop: 10, fontSize: 15, fontWeight: "900", color: "#0F172A" }}>
         {item.label}
-      </Text>
-      <Text style={{ marginTop: 6, color: "#6B7280", fontSize: 12 }}>
-        {item.count} {item.count === 1 ? "file" : "files"}
       </Text>
     </TouchableOpacity>
   );
@@ -781,16 +806,17 @@ const Item = ({ item }) => {
     .replace(/^\w/, (c) => c.toUpperCase());
 
   return (
-    <View
-      style={{
-        backgroundColor: "#F5F7FB",
-        padding: 14,
-        borderRadius: 14,
-        marginBottom: 10,
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-      }}
-    >
+  <View
+    style={{
+      width: "100%",
+      backgroundColor: "#F5F7FB",
+      padding: 14,
+      borderRadius: 14,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+    }}
+  >
       <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
         <TouchableOpacity
           onPress={() => onOpen(item)}
@@ -828,23 +854,21 @@ const Item = ({ item }) => {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => openMenu(item)}
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 10,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "#EEF2FF",
-            borderWidth: 1,
-            borderColor: "#E0E7FF",
-          }}
-        >
-          <Text style={{ fontSize: 22, lineHeight: 22, fontWeight: "900", color: brand }}>
-            ⋯
-          </Text>
-        </TouchableOpacity>
+     <TouchableOpacity
+  onPress={() => openMenu(item)}
+  style={{
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#E0E7FF",
+  }}
+>
+  <Ionicons name="ellipsis-horizontal" size={18} color={brand} />
+</TouchableOpacity>
       </View>
     </View>
   );
@@ -913,13 +937,13 @@ const Item = ({ item }) => {
 
         <Line />
 
-
    <FlatList
   data={filteredFiles}
   keyExtractor={(item) => item.$id}
   renderItem={({ item }) => <Item item={item} />}
   refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-  contentContainerStyle={{ paddingBottom: 80, paddingTop: 12 }}
+  contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 }}
+  style={{ flex: 1 }}
   ListHeaderComponent={
     <View>
       <TextInput
@@ -937,7 +961,7 @@ const Item = ({ item }) => {
           marginBottom: 12,
         }}
       />
-
+      
       {selectedCategory ? (
         <View
           style={{
@@ -972,17 +996,18 @@ const Item = ({ item }) => {
           </View>
 
           <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
-            {folderCards.map((c) => (
-              <FolderCard key={c.key} item={c} />
-            ))}
-          </View>
+  {folderCards.map((f) => (
+  <FolderCard key={f.key} item={f} />
+))}
+</View>
 
           <Text style={{ fontWeight: "900", fontSize: 16, marginTop: 8 }}>Recent documents</Text>
         </View>
       )}
     </View>
   }
-/> </InnerContainer>
+/>
+</InnerContainer>
 
 <Modal
   visible={menuVisible}
@@ -1011,31 +1036,59 @@ const Item = ({ item }) => {
         borderColor: "#E5E7EB",
       }}
     >
-      <Text style={{ fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
-        Actions
-      </Text>
+    <View style={{ paddingBottom: 10 }}>
+  <Text style={{ fontSize: 16, fontWeight: "900" }} numberOfLines={1}>
+    {menuDoc?.title || "Document"}
+  </Text>
+  <Text style={{ marginTop: 4, fontSize: 12, color: "#6B7280" }} numberOfLines={1}>
+    {(normaliseCategory(menuDoc?.category) || "uncategorised").replace(/^\w/, (c) => c.toUpperCase())}
+  </Text>
+</View>
 
-      {[
-        { key: "open", label: "Open" },
-        { key: "summarise", label: "Summarise" },
-        { key: "listen", label: "Listen" },
-        { key: "categorise", label: "Categorise" },
-        { key: "category", label: "Change category" },
-        { key: "keywords", label: "Edit keywords" },
-        { key: "delete", label: "Delete" },
-      ].map((a) => (
-        <TouchableOpacity
-          key={a.key}
-          onPress={() => handleMenuAction(a.key)}
-          style={{
-            paddingVertical: 12,
-            borderTopWidth: 1,
-            borderTopColor: "#F1F5F9",
-          }}
-        >
-          <Text style={{ fontSize: 15, fontWeight: "700" }}>{a.label}</Text>
-        </TouchableOpacity>
-      ))}
+  {[
+  { key: "open", label: "Open", icon: "document-text-outline" },
+  { key: "summarise", label: "Summarise", icon: "sparkles-outline" },
+  { key: "listen", label: "Listen", icon: "volume-high-outline" },
+  { key: "categorise", label: "Categorise", icon: "pricetag-outline" },
+  { key: "category", label: "Change category", icon: "folder-outline" },
+  { key: "keywords", label: "Edit keywords", icon: "create-outline" },
+  { key: "delete", label: "Delete", icon: "trash-outline" },
+].map((a, idx) => (
+  <TouchableOpacity
+    key={a.key}
+    onPress={() => handleMenuAction(a.key)}
+    style={{
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 12,
+      borderTopWidth: idx === 0 ? 1 : 0,
+      borderTopColor: "#F1F5F9",
+    }}
+  >
+    <View style={{ width: 28, alignItems: "center" }}>
+      <Ionicons
+        name={a.icon}
+        size={18}
+        color={a.key === "delete" ? "#B91C1C" : "#0F172A"}
+      />
+    </View>
+
+    <Text
+      style={{
+        flex: 1,
+        fontSize: 15,
+        fontWeight: "700",
+        color: a.key === "delete" ? "#B91C1C" : "#0F172A",
+      }}
+    >
+      {a.label}
+    </Text>
+
+    {a.key !== "delete" && (
+      <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+    )}
+  </TouchableOpacity>
+))}
 
       <TouchableOpacity
         onPress={closeMenu}
@@ -1126,6 +1179,138 @@ const Item = ({ item }) => {
 
         <TouchableOpacity
           onPress={closeKeywordsModal}
+          style={{
+            flex: 1,
+            paddingVertical: 12,
+            borderRadius: 12,
+            backgroundColor: "#F1F5F9",
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ color: "#0F172A", fontWeight: "900" }}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  </TouchableOpacity>
+</Modal>
+
+<Modal
+  visible={categoryModalVisible}
+  transparent
+  animationType="fade"
+  onRequestClose={closeCategoryModal}
+>
+  <TouchableOpacity
+    activeOpacity={1}
+    onPress={closeCategoryModal}
+    style={{
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      justifyContent: "center",
+      padding: 18,
+    }}
+  >
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={() => {}}
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
+      }}
+    >
+      <Text style={{ fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
+        Change category
+      </Text>
+
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {CATEGORY_OPTIONS.map((c) => {
+          const selected = categoryChoice === c;
+          return (
+            <TouchableOpacity
+              key={c}
+              onPress={() => {
+                setCategoryChoice(c);
+                setCategoryCustom("");
+              }}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: selected ? brand : "#E2E8F0",
+                backgroundColor: selected ? brand : "#F8FAFC",
+              }}
+            >
+              <Text style={{ color: selected ? "#fff" : "#0F172A", fontWeight: "800" }}>
+                {c}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <Text style={{ marginTop: 12, fontSize: 12, color: "#64748B" }}>
+        Or type a custom category
+      </Text>
+
+      <TextInput
+        value={categoryCustom}
+        onChangeText={(t) => {
+          setCategoryCustom(t);
+          if (t.trim().length > 0) setCategoryChoice("");
+        }}
+        placeholder="e.g. insurance"
+        placeholderTextColor="#94A3B8"
+        style={{
+          marginTop: 8,
+          width: "100%",
+          backgroundColor: "#F1F5F9",
+          borderRadius: 12,
+          paddingHorizontal: 14,
+          paddingVertical: 10,
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+          color: "#0F172A",
+        }}
+      />
+
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+        <TouchableOpacity
+          onPress={async () => {
+            try {
+              const docId = categoryModalDoc?.$id;
+              if (!docId) return;
+
+              const next =
+                categoryCustom.trim().length > 0
+                  ? categoryCustom.trim().toLowerCase()
+                  : categoryChoice;
+
+              await updateDocFields(docId, { category: next || null });
+              closeCategoryModal();
+              await load();
+            } catch {
+              Alert.alert("Update failed", "Could not save category.");
+            }
+          }}
+          style={{
+            flex: 1,
+            paddingVertical: 12,
+            borderRadius: 12,
+            backgroundColor: brand,
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "900" }}>Save</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={closeCategoryModal}
           style={{
             flex: 1,
             paddingVertical: 12,
