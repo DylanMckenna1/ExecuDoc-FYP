@@ -5,21 +5,25 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  ScrollView,
   Alert,
   TextInput,
+  FlatList,
+  RefreshControl,
+  ScrollView,
 } from "react-native";
 import { useTtsPlayer } from "../hooks/useTtsPlayer";
 import { Colors } from "../components/styles";
+import { Ionicons } from "@expo/vector-icons";
 import { getCurrentUser, listSavedItems, removeSavedItem } from "../services/appwrite";
 
 const { brand } = Colors;
 
 export default function Listen({ route, navigation }) {
-  const textFromRoute = route?.params?.text ?? "";
+const textFromRoute = typeof route?.params?.text === "string" ? route.params.text : "";
 const [localText, setLocalText] = useState("");
 const text = localText || textFromRoute;
-  const title = route?.params?.title ?? "Library";
+const title = route?.params?.title ?? "Library";
+const hasText = typeof text === "string" && text.trim().length > 0;
 
   // Library state 
   const [me, setMe] = useState(null);
@@ -40,7 +44,7 @@ const text = localText || textFromRoute;
         setItems([]);
         return;
       }
-      const docs = await listSavedItems(userId);
+      const docs = (await listSavedItems(userId)) || [];
 
 const sorted = [...docs].sort(
   (a, b) => new Date(b.$createdAt) - new Date(a.$createdAt)
@@ -54,9 +58,21 @@ setItems(sorted);
   }
 
   useEffect(() => {
-    const hasText = typeof text === "string" && text.trim().length > 0;
-    if (!hasText) loadLibrary();
-  }, [text]);
+  if (!hasText) {
+    loadLibrary();
+  }
+}, [hasText]);
+useEffect(() => {
+  const flag = route?.params?.autoMostRecent === true;
+  if (!flag) return;
+  if (!items || items.length === 0) return;
+
+  const mostRecent = items[0];
+  if (!mostRecent?.summaryText) return;
+
+  setLocalText(mostRecent.summaryText);
+  navigation.setParams({ autoMostRecent: false });
+}, [route?.params?.autoMostRecent, items]);
 
   // Tts player 
   const { status, error, generateAndPlay, pause, resume, stop } = useTtsPlayer({
@@ -69,7 +85,7 @@ setItems(sorted);
   });
 
   const busy = status === "generating" || status === "downloading";
-  const hasText = typeof text === "string" && text.trim().length > 0;
+  
 
   const norm = (v) => (typeof v === "string" ? v.toLowerCase().trim() : "");
 
@@ -89,79 +105,15 @@ const filteredItems = items.filter((it) => {
 });
 
   // Library tab
-  if (!hasText) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
-        <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
-          <Text style={{ fontSize: 22, fontWeight: "800", color: "#0F172A" }}>
-            Library
-          </Text>
-          <Text style={{ marginTop: 6, color: "#64748B", lineHeight: 20 }}>
-            Your saved summaries and audio will show here.
-          </Text>
+if (!hasText) {
+  const categories = ["all", "finance", "history", "study", "legal", "work", "personal"];
 
-         <TouchableOpacity
-  onPress={loadLibrary}
-  style={{
-    marginTop: 12,
-    alignSelf: "flex-start",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: "#F1F5F9",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  }}
->
-  <Text style={{ fontWeight: "800", color: "#0F172A" }}>Refresh</Text>
-</TouchableOpacity>
-{filteredItems.length > 0 && (
-  <TouchableOpacity
-    onPress={() => {
-      const mostRecent = filteredItems[0];
-      if (!mostRecent.summaryText) return;
-      setLocalText(mostRecent.summaryText);
-    }}
-    style={{
-      marginTop: 10,
-      alignSelf: "flex-start",
-      paddingVertical: 10,
-      paddingHorizontal: 14,
-      borderRadius: 12,
-      backgroundColor: brand,
-    }}
-  >
-    <Text style={{ color: "#fff", fontWeight: "800" }}>
-      Open Most Recent
-    </Text>
-  </TouchableOpacity>
-)}
-
-<TextInput
-  value={searchQuery}
-  onChangeText={setSearchQuery}
-  placeholder="Search library..."
-  placeholderTextColor="#94A3B8"
-  style={{
-    marginTop: 12,
-    width: "100%",
-    backgroundColor: "#F1F5F9",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    color: "#0F172A",
-  }}
-/>
-
-<View style={{ flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-  {["all", "finance", "history", "study", "legal", "work", "personal"].map((c) => {
-    const active = categoryFilter === c;
+  const renderChip = (key) => {
+    const active = categoryFilter === key;
     return (
       <TouchableOpacity
-        key={c}
-        onPress={() => setCategoryFilter(c)}
+        key={key}
+        onPress={() => setCategoryFilter(key)}
         style={{
           paddingVertical: 8,
           paddingHorizontal: 12,
@@ -169,137 +121,276 @@ const filteredItems = items.filter((it) => {
           backgroundColor: active ? brand : "#F1F5F9",
           borderWidth: 1,
           borderColor: active ? brand : "#E2E8F0",
+          marginRight: 8,
+          marginBottom: 8,
         }}
       >
-        <Text style={{ color: active ? "#fff" : "#0F172A", fontWeight: "800" }}>
-          {c === "all" ? "All" : c}
+        <Text style={{ color: active ? "#fff" : "#0F172A", fontWeight: "800", fontSize: 12 }}>
+          {key === "all" ? "All" : key.charAt(0).toUpperCase() + key.slice(1)}
         </Text>
       </TouchableOpacity>
     );
-  })}
-</View>
+  };
 
-{loadingLib ? (
-  <View style={{ marginTop: 16, flexDirection: "row", alignItems: "center" }}>
-    <ActivityIndicator />
-    <Text style={{ marginLeft: 10, color: "#334155" }}>Loading...</Text>
-  </View>
-) : null}
+  const renderItem = ({ item }) => {
+    const hasAudio = typeof item?.audioFileId === "string" && item.audioFileId.trim().length > 0;
 
-          {libError ? (
-            <Text style={{ color: "red", marginTop: 10 }}>{libError}</Text>
-          ) : null}
+    return (
+      <TouchableOpacity
+        onPress={() => {
+          if (item?.summaryText) setLocalText(item.summaryText);
+        }}
+        style={{
+          backgroundColor: "#FFFFFF",
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+          padding: 14,
+          marginBottom: 12,
+        }}
+        activeOpacity={0.9}
+      >
+        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+          <View
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 12,
+              backgroundColor: "#EEF2FF",
+              alignItems: "center",
+              justifyContent: "center",
+              marginRight: 10,
+            }}
+          >
+            <Ionicons name="bookmark-outline" size={18} color={brand} />
+          </View>
 
-        {!loadingLib && filteredItems.length === 0 ? (
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, fontWeight: "900", color: "#0F172A" }} numberOfLines={1}>
+              {item?.title || "Saved summary"}
+            </Text>
+
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
+              {!!item?.category && (
+                <View
+                  style={{
+                    paddingVertical: 4,
+                    paddingHorizontal: 10,
+                    borderRadius: 999,
+                    backgroundColor: "#F1F5F9",
+                    borderWidth: 1,
+                    borderColor: "#E2E8F0",
+                    marginRight: 8,
+                    marginBottom: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#0F172A" }}>
+                    {String(item.category).charAt(0).toUpperCase() + String(item.category).slice(1)}
+                  </Text>
+                </View>
+              )}
+
+              {!!item?.summaryType && (
+                <View
+                  style={{
+                    paddingVertical: 4,
+                    paddingHorizontal: 10,
+                    borderRadius: 999,
+                    backgroundColor: "#EEF2FF",
+                    borderWidth: 1,
+                    borderColor: "#C7D2FE",
+                    marginRight: 8,
+                    marginBottom: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "900", color: brand }}>
+                    {String(item.summaryType).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+
+              {hasAudio && (
+                <View
+                  style={{
+                    paddingVertical: 4,
+                    paddingHorizontal: 10,
+                    borderRadius: 999,
+                    backgroundColor: "#ECFDF5",
+                    borderWidth: 1,
+                    borderColor: "#A7F3D0",
+                    marginBottom: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "900", color: "#065F46" }}>AUDIO</Text>
+                </View>
+              )}
+            </View>
+
+            {!!item?.summaryText && (
+              <Text style={{ marginTop: 8, color: "#475569", lineHeight: 20 }} numberOfLines={3}>
+                {item.summaryText}
+              </Text>
+            )}
+          </View>
+
+          <TouchableOpacity
+            onPress={() => {
+              Alert.alert("Remove", "Remove this item from your Library?", [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Remove",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await removeSavedItem(item.$id);
+                      await loadLibrary();
+                    } catch (e) {
+                      Alert.alert("Remove failed", e?.message || "Could not remove item.");
+                    }
+                  },
+                },
+              ]);
+            }}
+            style={{ paddingLeft: 10, paddingTop: 4 }}
+          >
+            <Ionicons name="trash-outline" size={18} color="#B91C1C" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ flexDirection: "row", marginTop: 12 }}>
+          <TouchableOpacity
+            onPress={() => {
+              if (!item?.summaryText) return;
+              setLocalText(item.summaryText);
+            }}
+            style={{
+              flex: 1,
+              paddingVertical: 10,
+              borderRadius: 12,
+              backgroundColor: "#F1F5F9",
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+              alignItems: "center",
+              marginRight: 10,
+            }}
+          >
+            <Text style={{ fontWeight: "900", color: "#0F172A" }}>Open</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => {
+              if (!item?.summaryText) return;
+              generateAndPlay(item.summaryText);
+            }}
+            style={{
+              flex: 1,
+              paddingVertical: 10,
+              borderRadius: 12,
+              backgroundColor: brand,
+              alignItems: "center",
+              opacity: busy ? 0.6 : 1,
+            }}
+            disabled={busy}
+          >
+            <Text style={{ fontWeight: "900", color: "#fff" }}>
+              {busy ? "Loading…" : "Play"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
+      <FlatList
+        data={filteredItems}
+        keyExtractor={(it) => it.$id}
+        renderItem={renderItem}
+        refreshControl={<RefreshControl refreshing={loadingLib} onRefresh={loadLibrary} />}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 28 }}
+        ListHeaderComponent={
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{ fontSize: 22, fontWeight: "900", color: "#0F172A" }}>Library</Text>
+            <Text style={{ marginTop: 6, color: "#64748B", lineHeight: 20 }}>
+              Saved summaries (and audio when available).
+            </Text>
+
+            {!!libError && (
+              <Text style={{ marginTop: 10, color: "#B91C1C", fontWeight: "800" }}>
+                {libError}
+              </Text>
+            )}
+
             <View
               style={{
-                marginTop: 14,
-                padding: 14,
-                borderRadius: 14,
+                marginTop: 12,
+                flexDirection: "row",
+                alignItems: "center",
                 backgroundColor: "#F1F5F9",
                 borderWidth: 1,
                 borderColor: "#E2E8F0",
+                borderRadius: 14,
+                paddingHorizontal: 12,
               }}
             >
-              <Text style={{ fontWeight: "700", color: "#0F172A" }}>
-                Nothing saved yet
-              </Text>
-              <Text style={{ marginTop: 6, color: "#64748B", lineHeight: 20 }}>
-                Save a summary or audio from Documents to see it here.
-              </Text>
+              <Ionicons name="search-outline" size={18} color="#64748B" />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search saved summaries…"
+                placeholderTextColor="#94A3B8"
+                style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 10, color: "#0F172A" }}
+              />
+              {!!searchQuery && (
+                <TouchableOpacity onPress={() => setSearchQuery("")} style={{ padding: 6 }}>
+                  <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
             </View>
-          ) : null}
 
-          <ScrollView style={{ marginTop: 12 }} contentContainerStyle={{ paddingBottom: 30 }}>
-                        {filteredItems.map((it) => {
-              const label = `${it.summaryType || "summary"} • ${it.title || "Untitled"}`;
-              const preview = (it.summaryText || "").slice(0, 120);
-
-              return (
-                <View
-                  key={it.$id}
-                  style={{
-                    marginBottom: 10,
-                    padding: 14,
-                    borderRadius: 14,
-                    backgroundColor: "#FFFFFF",
-                    borderWidth: 1,
-                    borderColor: "#E2E8F0",
-                  }}
-                >
-                  <Text style={{ fontWeight: "900", color: "#0F172A" }}>{label}</Text>
-                  {preview ? (
-                    <Text style={{ marginTop: 6, color: "#64748B", lineHeight: 20 }}>
-                      {preview}{preview.length >= 120 ? "…" : ""}
-                    </Text>
-                  ) : null}
-
-                  <View style={{ flexDirection: "row", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                    <TouchableOpacity
-                  onPress={() => {
-  if (!it.summaryText) {
-    Alert.alert(
-      "Nothing to open",
-      "This saved item has no summary text stored. Delete it and re-save after summarising."
-    );
-    return;
-  }
-  setLocalText(it.summaryText);
-}}
-                      style={{
-                        paddingVertical: 10,
-                        paddingHorizontal: 14,
-                        borderRadius: 12,
-                        backgroundColor: brand,
-                      }}
-                      disabled={!it.summaryText}
-                    >
-                      <Text style={{ color: "#fff", fontWeight: "900" }}>
-                        Open
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => {
-                        Alert.alert(
-                          "Remove from Library?",
-                          "This only removes the saved item (it won't delete your document).",
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Remove",
-                              style: "destructive",
-                              onPress: async () => {
-                                try {
-                                  await removeSavedItem(it.$id);
-                                  await loadLibrary();
-                                } catch (e) {
-                                  Alert.alert("Failed", e?.message || "Could not remove item.");
-                                }
-                              },
-                            },
-                          ]
-                        );
-                      }}
-                      style={{
-                        paddingVertical: 10,
-                        paddingHorizontal: 14,
-                        borderRadius: 12,
-                        backgroundColor: "#0F172A",
-                      }}
-                    >
-                      <Text style={{ color: "#fff", fontWeight: "900" }}>Remove</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
+            <View style={{ marginTop: 12, flexDirection: "row", flexWrap: "wrap" }}>
+              {categories.map(renderChip)}
+            </View>
+          </View>
+        }
+        ListEmptyComponent={
+          <View
+            style={{
+              marginTop: 40,
+              alignItems: "center",
+              padding: 18,
+              borderRadius: 18,
+              backgroundColor: "#F8FAFC",
+              borderWidth: 1,
+              borderColor: "#E2E8F0",
+            }}
+          >
+            <View
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 18,
+                backgroundColor: "#EEF2FF",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 10,
+              }}
+            >
+              <Ionicons name="library-outline" size={22} color={brand} />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: "900", color: "#0F172A" }}>
+              No saved items yet
+            </Text>
+            <Text style={{ marginTop: 6, color: "#64748B", textAlign: "center", lineHeight: 20 }}>
+              Save a summary from Documents and it will appear here.
+            </Text>
+          </View>
+        }
+      />
+    </SafeAreaView>
+  );
+}
 
   // Player mode 
   return (
