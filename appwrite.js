@@ -31,8 +31,9 @@ export const DOCUMENTS_COLLECTION_ID = "documents";
 export const BUCKET_ID = "69202f250019fb07635d";
 
 export const SAVED_ITEMS_COLLECTION_ID = "savedItems";
-
-export { Query }; 
+export const VOICE_RECORDINGS_BUCKET_ID = "69b2d9b00003b46bfc62";
+export const TRANSCRIBE_VOICE_FUNCTION_ID = "transcribeVoice";
+export { Query };
 
 // Function domains (from .env) 
 export const TTS_FUNCTION_URL = env("EXPO_PUBLIC_TTS_FUNCTION_URL", "");
@@ -255,6 +256,60 @@ export async function uploadUserDoc(userId, file) {
   return doc;
 }
 
+export async function uploadVoiceRecording(file) {
+  if (!file?.uri) throw new Error("Missing voice file.");
+
+  const storedFile = await storage.createFile({
+    bucketId: VOICE_RECORDINGS_BUCKET_ID,
+    fileId: ID.unique(),
+    file: {
+      name: file.name || "voice-command.m4a",
+      type: file.type || "audio/m4a",
+      size: file.size || 0,
+      uri: file.uri,
+    },
+  });
+
+  return storedFile;
+}
+
+export async function callTranscribeVoiceFunction(fileId) {
+  if (!fileId) throw new Error("Missing voice file id.");
+
+  const execution = await executeFunctionAndWait(
+    TRANSCRIBE_VOICE_FUNCTION_ID,
+    { fileId }
+  );
+
+  const bodyText =
+  execution?.responseBody ||
+  execution?.stdout ||
+  execution?.response ||
+  "";
+
+console.log("transcribe raw response:", bodyText);
+console.log("transcribe execution:", execution);
+
+  let parsed = null;
+try {
+  parsed = typeof bodyText === "string" ? JSON.parse(bodyText) : bodyText;
+} catch {}
+
+if (parsed?.error) throw new Error(parsed.error);
+
+const transcript =
+  parsed?.transcript ??
+  parsed?.text ??
+  parsed?.data?.transcript ??
+  "";
+
+if (!transcript || typeof transcript !== "string") {
+  throw new Error("No transcript returned.");
+}
+
+  return transcript.trim();
+}
+
 export async function listUserDocs(userId) {
   if (!userId) return [];
   const res = await databases.listDocuments(
@@ -344,30 +399,14 @@ export async function callSummariseFunction(doc) {
   return parsed || { ok: true, summary: bodyText };
 }
 
-async function executeFunctionAndWait(functionId, payload, timeoutMs = 120000) {
-  const created = await functions.createExecution(
+async function executeFunctionAndWait(functionId, payload) {
+  const execution = await functions.createExecution(
     functionId,
     JSON.stringify(payload),
-    true
+    false
   );
 
-  const executionId = created?.$id;
-  if (!executionId) return created;
-
-  const start = Date.now();
-
-  while (Date.now() - start < timeoutMs) {
-    const latest = await functions.getExecution(functionId, executionId);
-
-    const status = latest?.status;
-    if (status === "completed" || status === "failed") {
-      return latest;
-    }
-
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-
-  throw new Error("Function execution timed out.");
+  return execution;
 }
 
 // Extract full text 
