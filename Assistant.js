@@ -85,7 +85,9 @@ const getCommandAction = (text) => {
   if (
     command.includes("open recent document") ||
     command.includes("open my recent document") ||
-    command.includes("open latest document")
+    command.includes("open latest document") ||
+    command.includes("open recent file") ||
+    command.includes("open latest file")
   ) {
     return {
       command,
@@ -99,24 +101,33 @@ const getCommandAction = (text) => {
   }
 
   if (
-    command.includes("open library") ||
-    command.includes("go to library") ||
-    command.includes("open saved summaries") ||
-    command.includes("open saved items")
-  ) {
-    return {
-      command,
-      screen: "Library",
-      params: {
-        commandNonce: Date.now(),
-      },
-    };
-  }
+  command.includes("play latest summary") ||
+  command.includes("play newest summary") ||
+  command.includes("open latest summary") ||
+  command.includes("play my latest summary") ||
+  command.includes("play saved summary") ||
+  command.includes("play recent summary") ||
+  command.includes("open recent summary") ||
+  command.includes("open summary") ||
+  command.includes("play summary") ||
+  command.includes("open my summary") ||
+  command.includes("play my summary")
+) {
+  return {
+    command,
+    screen: "Library",
+    params: {
+      autoMostRecent: true,
+      commandNonce: Date.now(),
+    },
+  };
+}
 
   if (
     command.includes("open documents") ||
     command.includes("go to documents") ||
-    command.includes("show documents")
+    command.includes("show documents") ||
+    command.includes("open document section")
   ) {
     return {
       command,
@@ -132,7 +143,9 @@ const getCommandAction = (text) => {
   if (
     command.includes("play latest summary") ||
     command.includes("play newest summary") ||
-    command.includes("open latest summary")
+    command.includes("open latest summary") ||
+    command.includes("play my latest summary") ||
+    command.includes("play saved summary")
   ) {
     return {
       command,
@@ -147,7 +160,8 @@ const getCommandAction = (text) => {
   if (
     command.includes("finance") ||
     command.includes("finance folder") ||
-    command.includes("finance documents")
+    command.includes("finance documents") ||
+    command.includes("finance files")
   ) {
     return {
       command,
@@ -163,7 +177,8 @@ const getCommandAction = (text) => {
   if (
     command.includes("work") ||
     command.includes("work folder") ||
-    command.includes("work documents")
+    command.includes("work documents") ||
+    command.includes("work files")
   ) {
     return {
       command,
@@ -179,7 +194,8 @@ const getCommandAction = (text) => {
   if (
     command.includes("study") ||
     command.includes("study folder") ||
-    command.includes("study documents")
+    command.includes("study documents") ||
+    command.includes("study files")
   ) {
     return {
       command,
@@ -195,7 +211,8 @@ const getCommandAction = (text) => {
   if (
     command.includes("personal") ||
     command.includes("personal folder") ||
-    command.includes("personal documents")
+    command.includes("personal documents") ||
+    command.includes("personal files")
   ) {
     return {
       command,
@@ -211,7 +228,8 @@ const getCommandAction = (text) => {
   if (
     command.includes("legal") ||
     command.includes("legal folder") ||
-    command.includes("legal documents")
+    command.includes("legal documents") ||
+    command.includes("legal files")
   ) {
     return {
       command,
@@ -227,7 +245,8 @@ const getCommandAction = (text) => {
   if (
     command.includes("history") ||
     command.includes("history folder") ||
-    command.includes("history documents")
+    command.includes("history documents") ||
+    command.includes("history files")
   ) {
     return {
       command,
@@ -244,6 +263,7 @@ const getCommandAction = (text) => {
     command.includes("other") ||
     command.includes("other folder") ||
     command.includes("other documents") ||
+    command.includes("other files") ||
     command.includes("uncategorised") ||
     command.includes("uncategorized")
   ) {
