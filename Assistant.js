@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { transcribeAudio } from "../services/transcribeVoice";
 
 export default function Assistant({ navigation }) {
-
+ // Setting up my 3 key states
   const [recording, setRecording] = useState(null);
   const [status, setStatus] = useState("idle");
   const [transcript, setTranscript] = useState("");
@@ -21,14 +21,14 @@ export default function Assistant({ navigation }) {
         return;
       }
 
-      // configure recording settings
+      // Sets audio mode for recording 
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
       setStatus("listening");
-
+// starts recording and saves the recording into a state 
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
@@ -46,10 +46,10 @@ export default function Assistant({ navigation }) {
 
   try {
     setStatus("transcribing");
-
+//Stop the recording abnd get the file Uri
     await recording.stopAndUnloadAsync();
     const uri = recording.getURI();
-
+// clear current recording from state
     setRecording(null);
 
     if (!uri) {
@@ -57,17 +57,18 @@ export default function Assistant({ navigation }) {
       setStatus("idle");
       return;
     }
-
+// Calling transcribe Audio URI
     const transcriptText = await transcribeAudio(uri);
-
+//checking to see if the transcript text came back
     if (!transcriptText || typeof transcriptText !== "string") {
       setTranscript("I couldn't understand that. Please try again.");
       setStatus("idle");
       return;
     }
-
+//save transcript and set status to processing 
    setTranscript(transcriptText);
    setStatus("processing");
+ // send trancript to handleVoicecommand
    handleVoiceCommand(transcriptText);
   } catch (err) {
     console.log("stop recording error", err);
@@ -78,10 +79,11 @@ export default function Assistant({ navigation }) {
 };
 
 const getCommandAction = (text) => {
+    // converting text to lowercase
   const command = typeof text === "string" ? text.toLowerCase().trim() : "";
-
+  
+  // matching the transcript against these predefined commands 
   if (!command) return null;
-
   if (
     command.includes("open recent document") ||
     command.includes("open my recent document") ||
@@ -89,6 +91,7 @@ const getCommandAction = (text) => {
     command.includes("open recent file") ||
     command.includes("open latest file")
   ) {
+// retrn an action object with screens, params and commands 
     return {
       command,
       screen: "Documents",
@@ -135,23 +138,6 @@ const getCommandAction = (text) => {
       params: {
         autoOpenRecent: false,
         autoFilterCategory: null,
-        commandNonce: Date.now(),
-      },
-    };
-  }
-
-  if (
-    command.includes("play latest summary") ||
-    command.includes("play newest summary") ||
-    command.includes("open latest summary") ||
-    command.includes("play my latest summary") ||
-    command.includes("play saved summary")
-  ) {
-    return {
-      command,
-      screen: "Library",
-      params: {
-        autoMostRecent: true,
         commandNonce: Date.now(),
       },
     };
@@ -278,12 +264,39 @@ const getCommandAction = (text) => {
     };
   }
 
+  if (
+  command.startsWith("search ") ||
+  command.startsWith("find ") ||
+  command.startsWith("open document ") ||
+  command.startsWith("open file ")
+) {
+  const searchText = command
+    .replace("search ", "")
+    .replace("find ", "")
+    .replace("open document ", "")
+    .replace("open file ", "")
+    .trim();
+
+  if (searchText.length > 0) {
+    return {
+      command,
+      screen: "Documents",
+      params: {
+        autoOpenRecent: false,
+        autoFilterCategory: null,
+        autoSearchText: searchText,
+        commandNonce: Date.now(),
+      },
+    };
+  }
+}
+
   return null;
 };
-
+//calling get command action text 
   const handleVoiceCommand = (text) => {
   const action = getCommandAction(text);
-
+// if no match show error if matches set status to executing 
   if (!action) {
     alert("I couldn't understand that command. Please try again.");
     setStatus("idle");
@@ -291,9 +304,11 @@ const getCommandAction = (text) => {
   }
 
   setStatus("executing");
+  //store the matched command in transcript
   setTranscript(action.command);
 
   navigation.navigate(action.screen, action.params);
+  // return the assistant to idle
   setTimeout(() => setStatus("idle"), 600);
 };
 

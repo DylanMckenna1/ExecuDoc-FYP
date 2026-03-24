@@ -10,7 +10,6 @@ import {
   Modal,
   ActivityIndicator,
   ScrollView,
-  StyleSheet,
   TextInput,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -131,9 +130,8 @@ function readTtsCache(doc) {
   };
 }
 
-/* ─component ─*/
-
-export default function Documents({ onBack }) {
+// setting up all screen states 
+export default function Documents({ route, navigation }) {
   const [user, setUser] = useState(null);
   const userId = user?.$id;
 
@@ -169,7 +167,7 @@ const onAutoTag = async (doc, options = {}) => {
     Alert.alert("Tagging failed", "Missing document id.");
     return;
   }
-
+// set tagging id for loading state 
   try {
     setTaggingId(docId);
 
@@ -177,10 +175,10 @@ const onAutoTag = async (doc, options = {}) => {
     if (!hasText) {
       await callExtractTextFunction(doc);
     }
-
+// get latest doc by iD and calls tagFunction latest doc
     const latestDoc = await getDocumentById(docId);
     await callTagFunction(latestDoc);
-
+// reloads the list 
     await load();
 
     if (!silent) {
@@ -207,7 +205,6 @@ const autoCategoriseSilently = (doc) => {
   const [viewerTitle, setViewerTitle] = useState('');
   const [viewerLoading, setViewerLoading] = useState(false);
   const [viewerType, setViewerType] = useState('pdf');
-  const [kwEditId, setKwEditId] = useState(null);
   const [kwValue, setKwValue] = useState("");
 
   const openSummaryPicker = (doc) => {
@@ -341,6 +338,43 @@ const handleMenuAction = async (action) => {
     if (userId) load();
   }, [userId, load]);
 
+useEffect(() => {
+  //reading route params from Assistant.js
+  const autoOpenRecent = route?.params?.autoOpenRecent === true;
+  const autoFilterCategory = route?.params?.autoFilterCategory;
+  const autoSearchText = route?.params?.autoSearchText || "";
+  const commandNonce = route?.params?.commandNonce;
+
+  if (!commandNonce) return;
+  if (!files || files.length === 0) return;
+//folder and catergory filtering
+  if (autoFilterCategory) {
+    setSelectedCategory(autoFilterCategory);
+  } else {
+    setSelectedCategory("all");
+  }
+// handling voice search
+  if (autoSearchText) {
+    setSearchQuery(autoSearchText);
+  } else {
+    setSearchQuery("");
+  }
+// opens newest doc automatically
+  if (autoOpenRecent) {
+    const mostRecent = files[0];
+    if (mostRecent) {
+      onOpen(mostRecent);
+    }
+  }
+// clearing params after exectution
+  navigation.setParams({
+    autoOpenRecent: false,
+    autoFilterCategory: null,
+    autoSearchText: "",
+    commandNonce: null,
+  });
+}, [route?.params?.commandNonce, files]);
+
   /* ─ uploads ─ */
 
   const onUploadFile = async () => {
@@ -348,7 +382,7 @@ const handleMenuAction = async (action) => {
       Alert.alert('Not logged in', 'Session not ready yet. Please wait a second.');
       return;
     }
-
+// opening document picker
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*',
@@ -359,14 +393,14 @@ const handleMenuAction = async (action) => {
 
       const asset = result.assets?.[0];
       if (!asset) return;
-
+// uploading file using - 
   const createdDoc = await uploadUserDoc(userId, {
   uri: asset.uri,
   name: asset.name || "document",
   type: asset.mimeType || "application/octet-stream",
   size: asset.size || 0,
 });
-
+// calling auto categorise silently and reloading documnet list
 autoCategoriseSilently(createdDoc);
 
 await load();
@@ -419,6 +453,7 @@ await load();
   /* ─ open file ─ */
 
   const onOpen = async (doc) => {
+    // builds file url
     try {
       const type = deriveType(doc);
       const url = getFileDownloadUrl(doc.fileId);
@@ -442,7 +477,7 @@ await load();
         const body = await resp.text().catch(() => '');
         throw new Error(body || `Download failed (${resp.status})`);
       }
-
+// converting to localbase 64
       const arrayBuffer = await resp.arrayBuffer();
       const base64 = Buffer.from(arrayBuffer).toString('base64');
 
@@ -457,14 +492,14 @@ await load();
       } else if (mime.includes('word') || name.endsWith('.docx')) ext = '.docx';
       else if (name.includes('.')) ext = name.slice(name.lastIndexOf('.'));
       else ext = '';
-
+// writes file into local cache
       const safeId = (doc.fileId || doc.$id).replace(/[^a-zA-Z0-9_-]/g, '');
       const localPath = `${FileSystem.cacheDirectory}execudoc_${safeId}${ext}`;
 
       await FileSystem.writeAsStringAsync(localPath, base64, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
+// open file viewer
       setViewerUri(localPath);
     } catch (e) {
       console.log('open error', e);
@@ -477,13 +512,13 @@ await load();
   };
 
   /* ─ summarise ─*/
-
+//short/detailed
  const onSummarise = async (doc, mode = "short") => {
   const isDetailed = mode === "detailed";
   try {
     setSummarisingId(doc.$id);
 
-    // Cache check sono API call if already saved
+    // Cache check so no API call if already saved
     const cache = readTtsCache(doc);
 
     // short mode
@@ -642,7 +677,7 @@ const onListenDoc = async (doc) => {
     // If the function returns text immediately, use it
     const returnedText =
       (result?.textContent || result?.extractedText || result?.text || "").trim();
-
+// shows tts modal 
     if (returnedText) {
       setTtsText(returnedText);
       setTtsContext({ docId: doc.$id, mode: "doc" });
@@ -673,17 +708,14 @@ const onListenDoc = async (doc) => {
     Alert.alert("Listen failed", e?.message || "Try again.");
   }
 };
-
-  
   /* ─ delete ─*/
-
   const onDelete = (doc) => {
     Alert.alert('Delete document', `Delete "${doc.title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: async () => {
+        onPress: async () => { // calls delete user doc 
           try {
             await deleteUserDoc(doc.$id, doc.fileId);
             await load();
@@ -694,15 +726,16 @@ const onListenDoc = async (doc) => {
       },
     ]);
   };
-
+// folder categorys 
   const CATEGORY_PRESETS = ["work", "study", "legal", "finance", "personal", "history", "other"];
-
+// converting category text to lc 
 const normaliseCategory = (value) => {
   const v = (value || "").trim().toLowerCase();
   return v;
 };
 
 const getFolderCards = () => {
+  // counts how many docs in each 
   const counts = {};
 
   for (const d of files) {
@@ -710,14 +743,14 @@ const getFolderCards = () => {
     const key = c || "uncategorised";
     counts[key] = (counts[key] || 0) + 1;
   }
-
+//builds folder cards dynamicaly adds - 
   const cards = [{ key: "all", label: "All", count: files.length }];
 
   for (const c of CATEGORY_PRESETS) {
     const count = counts[c] || 0;
     if (count > 0) cards.push({ key: c, label: c, count });
   }
-
+// and if needed uncategorise 
   const unc = counts["uncategorised"] || 0;
   if (unc > 0) cards.push({ key: "uncategorised", label: "Uncategorised", count: unc });
 
@@ -725,7 +758,7 @@ const getFolderCards = () => {
 };
 
 const folderCards = getFolderCards();
-
+// filter files in 3 stages 
 const filteredFiles = files
   .filter((doc) => {
     if (filter === "all") return true;
@@ -750,6 +783,11 @@ const filteredFiles = files
     if (selectedCategory === "uncategorised") return !c;
     return c === selectedCategory;
   });
+
+  const showFolderEmptyState =
+  selectedCategory &&
+  selectedCategory !== "all" &&
+  filteredFiles.length === 0;
 
   const FolderCard = ({ item }) => {
   const selected = selectedCategory === item.key;
@@ -797,7 +835,7 @@ const filteredFiles = files
     </TouchableOpacity>
   );
 };
- 
+ // document row card component 
 const Item = ({ item }) => {
   const type = deriveType(item);
   const { label, bg } = typeLabelAndColor(type);
@@ -807,15 +845,16 @@ const Item = ({ item }) => {
 
   return (
   <View
-    style={{
-      width: "100%",
-      backgroundColor: "#F5F7FB",
-      padding: 14,
-      borderRadius: 14,
-      marginBottom: 10,
-      borderWidth: 1,
-      borderColor: "#E5E7EB",
-    }}
+  style={{
+  width: "100%",
+  alignSelf: "stretch",
+  backgroundColor: "#F8FAFC",
+  padding: 16,
+  borderRadius: 16,
+  marginBottom: 12,
+  borderWidth: 1,
+  borderColor: "#E2E8F0",
+}}
   >
       <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
         <TouchableOpacity
@@ -913,7 +952,7 @@ const Item = ({ item }) => {
   return (
     <StyledContainer>
       <StatusBar style="dark" />
-      <InnerContainer style={{ width: '100%' }}>
+      <InnerContainer style={{ width: '100%', flex: 1, alignSelf: 'stretch' }}>
         <PageTitle style={{ textAlign: 'center' }}>Documents</PageTitle>
         <SubTitle style={{ textAlign: 'center', marginBottom: 12 }}>Your uploaded files</SubTitle>
 
@@ -940,56 +979,103 @@ const Item = ({ item }) => {
    <FlatList
   data={filteredFiles}
   keyExtractor={(item) => item.$id}
-  renderItem={({ item }) => <Item item={item} />}
-  refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-  contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 }}
-  style={{ flex: 1 }}
-  ListHeaderComponent={
-    <View>
+renderItem={({ item }) => (
+  <View style={{ width: "100%", alignSelf: "stretch" }}>
+    <Item item={item} />
+  </View>
+)}
+refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+contentContainerStyle={{
+  paddingHorizontal: 16,
+  paddingTop: 14,
+  paddingBottom: 32,
+  flexGrow: 1,
+  alignItems: "stretch",
+}}
+style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
+
+  ListEmptyComponent={
+    showFolderEmptyState ? (
+      <View
+        style={{
+          backgroundColor: "#F8FAFC",
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+          borderRadius: 16,
+          paddingVertical: 24,
+          paddingHorizontal: 18,
+          marginTop: 8,
+          alignItems: "center",
+        }}
+      >
+        <Text style={{ fontSize: 16, fontWeight: "800", color: "#0F172A", marginBottom: 6 }}>
+          No documents in this folder
+        </Text>
+        <Text style={{ color: "#64748B", textAlign: "center" }}>
+          Try another folder or go back to all folders.
+        </Text>
+      </View>
+    ) : null
+  }
+
+ ListHeaderComponent={
+  <View style={{ width: "100%", alignSelf: "stretch" }}>
       <TextInput
         value={searchQuery}
         onChangeText={setSearchQuery}
         placeholder="Search documents..."
         placeholderTextColor="#9CA3AF"
         style={{
-          width: "100%",
-          backgroundColor: "#F3F4F6",
-          borderRadius: 12,
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          marginTop: 14,
-          marginBottom: 12,
-        }}
+        width: "100%",
+        alignSelf: "stretch",
+        backgroundColor: "#F3F4F6",
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        marginTop: 14,
+        marginBottom: 12,
+     }}
       />
-      
-      {selectedCategory ? (
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 12,
-          }}
-        >
-          <TouchableOpacity
-            onPress={() => setSelectedCategory(null)}
-            style={{
-              paddingVertical: 8,
-              paddingHorizontal: 12,
-              borderRadius: 999,
-              backgroundColor: "#F1F5F9",
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-            }}
-          >
-            <Text style={{ fontWeight: "800" }}>All folders</Text>
-          </TouchableOpacity>
 
-          <Text style={{ color: "#6B7280", fontWeight: "700" }}>
-            {(selectedCategory || "").toString().toUpperCase()}
-          </Text>
-        </View>
-      ) : (
+           {selectedCategory && selectedCategory !== "all" ? (
+  <View style={{ width: "100%", alignSelf: "stretch", marginBottom: 18 }}>
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 12,
+      }}
+    >
+      <TouchableOpacity
+        onPress={() => setSelectedCategory("all")}
+        style={{
+          paddingVertical: 10,
+          paddingHorizontal: 14,
+          borderRadius: 12,
+          backgroundColor: "#F8FAFC",
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+        }}
+      >
+        <Text style={{ fontWeight: "800", color: "#0F172A" }}>All folders</Text>
+      </TouchableOpacity>
+
+      <Text style={{ fontWeight: "900", fontSize: 22, color: "#0F172A" }}>
+        {(selectedCategory || "").toString().replace(/^\w/, (c) => c.toUpperCase())}
+      </Text>
+    </View>
+
+    <Text style={{ color: "#64748B", fontWeight: "600", marginBottom: 14 }}>
+      {filteredFiles.length} {filteredFiles.length === 1 ? "document" : "documents"}
+    </Text>
+
+    <Text style={{ fontWeight: "900", fontSize: 16, color: "#0F172A" }}>
+      Documents
+    </Text>
+  </View>
+) : (
+
         <View style={{ marginBottom: 12 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }}>
             <Text style={{ fontWeight: "900", fontSize: 16 }}>Folders</Text>

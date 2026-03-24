@@ -31,6 +31,7 @@ export const DOCUMENTS_COLLECTION_ID = "documents";
 export const BUCKET_ID = "69202f250019fb07635d";
 
 export const SAVED_ITEMS_COLLECTION_ID = "savedItems";
+export const TTS_BUCKET_ID = "6972be01002bee843a33";
 export const VOICE_RECORDINGS_BUCKET_ID = "69b2d9b00003b46bfc62";
 export const TRANSCRIBE_VOICE_FUNCTION_ID = "transcribeVoice";
 export { Query };
@@ -96,7 +97,7 @@ function guessFileType(mimeOrName) {
   if (val.startsWith("audio/")) return "audio";
   return "other";
 }
-
+//normalisation / mapping layer to correct and allowed folders
 const ALLOWED_CATEGORIES = ["work", "study", "legal", "finance", "history", "personal", "other"];
 
 function normaliseCategory(value) {
@@ -239,7 +240,7 @@ export async function uploadUserDoc(userId, file) {
     DATABASE_ID,
     DOCUMENTS_COLLECTION_ID,
     ID.unique(),
-        {
+        {// metadate in new documents row 
       userID: userId,
       title: name,
       fileId: storedFile.$id,
@@ -255,7 +256,7 @@ export async function uploadUserDoc(userId, file) {
 
   return doc;
 }
-
+// uploads recorder .m4a to appwrite storage 
 export async function uploadVoiceRecording(file) {
   if (!file?.uri) throw new Error("Missing voice file.");
 
@@ -269,10 +270,11 @@ export async function uploadVoiceRecording(file) {
       uri: file.uri,
     },
   });
-
+// returns file object/id
   return storedFile;
 }
 
+//calling appwriteFunction using upload file id
 export async function callTranscribeVoiceFunction(fileId) {
   if (!fileId) throw new Error("Missing voice file id.");
 
@@ -280,7 +282,7 @@ export async function callTranscribeVoiceFunction(fileId) {
     TRANSCRIBE_VOICE_FUNCTION_ID,
     { fileId }
   );
-
+// reads the raw response
   const bodyText =
   execution?.responseBody ||
   execution?.stdout ||
@@ -289,14 +291,14 @@ export async function callTranscribeVoiceFunction(fileId) {
 
 console.log("transcribe raw response:", bodyText);
 console.log("transcribe execution:", execution);
-
+//parse json
   let parsed = null;
 try {
   parsed = typeof bodyText === "string" ? JSON.parse(bodyText) : bodyText;
 } catch {}
 
 if (parsed?.error) throw new Error(parsed.error);
-
+// pull the transcript string
 const transcript =
   parsed?.transcript ??
   parsed?.text ??
@@ -306,7 +308,7 @@ const transcript =
 if (!transcript || typeof transcript !== "string") {
   throw new Error("No transcript returned.");
 }
-
+// return it to the assistant 
   return transcript.trim();
 }
 
@@ -411,13 +413,14 @@ async function executeFunctionAndWait(functionId, payload) {
 
 // Extract full text 
 export async function callExtractTextFunction(doc) {
+  // get docid 
   const docId = typeof doc === "string" ? doc : doc?.$id;
   if (!docId) throw new Error("Missing docId for extractDocumentText.");
-
+// get the file info
   const fileId = typeof doc === "object" ? doc?.fileId : null;
   const mimeType = typeof doc === "object" ? doc?.mimeType : null;
   const fileUrl = fileId ? getFileDownloadUrl(fileId) : null;
-
+// building function payload
   const payload = {
     documentId: docId, 
     docId, 
@@ -427,22 +430,22 @@ export async function callExtractTextFunction(doc) {
     ...(doc?.title ? { title: doc.title } : {}),
   };
 
-  // Execute 
+  // call function
   const execution = await executeFunctionAndWait(
   EXTRACT_TEXT_FUNCTION_ID,
   payload
 );
-
+// function response
   const bodyText = execution?.responseBody || "";
   console.log("extract raw response:", bodyText);
-
+// parse json
   let parsed = null;
   try {
     parsed = JSON.parse(bodyText);
   } catch {}
 
   if (parsed?.error) throw new Error(parsed.error);
-
+// get extracted text
   const text =
     parsed?.textContent ??
     parsed?.extractedText ??
@@ -456,7 +459,7 @@ export async function callExtractTextFunction(doc) {
       console.log("attachTextContent failed:", e?.message || e);
     }
   }
-
+// return result
   return parsed || { ok: true, textContent: text };
 }
 export async function callTagFunction(doc) {
@@ -487,14 +490,14 @@ export async function callTagFunction(doc) {
   } catch {}
 
   if (parsed?.error) throw new Error(parsed.error);
-
+// get ai results
   const category = parsed?.category;
   const keywords = parsed?.keywords;
-
+// map category to app folders
   const mappedCategory = mapCategory(category, keywords, doc?.title);
 
  if (mappedCategory || keywords) {
-  try {
+  try { // save resulta
     await updateDocFields(docId, {
       category: mappedCategory,
       ...(keywords ? { keywords } : {}),
@@ -503,7 +506,7 @@ export async function callTagFunction(doc) {
     console.log("updateDocFields(tag) failed:", e?.message || e);
   }
 }
-
+// return
   return parsed || { ok: true, category: "", keywords: "" };
 }
 
@@ -579,6 +582,22 @@ export async function saveToLibrary({
     ID.unique(),
     data,
     savedItemPermissions(userId)
+  );
+}
+
+export async function updateSavedItemAudio(savedItemId, { audioFileId = "", audioParts = [] }) {
+  if (!savedItemId) throw new Error("Missing savedItemId");
+
+  const cleanedParts = Array.isArray(audioParts) ? audioParts.filter(Boolean) : [];
+
+  return databases.updateDocument(
+    DATABASE_ID,
+    SAVED_ITEMS_COLLECTION_ID,
+    savedItemId,
+    {
+      audioFileId: audioFileId || cleanedParts[0] || "",
+      audioParts: JSON.stringify(cleanedParts),
+    }
   );
 }
 
