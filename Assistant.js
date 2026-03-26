@@ -78,237 +78,266 @@ export default function Assistant({ navigation }) {
   }
 };
 
+const matchesCommand = (command, phrases = []) => {
+  return phrases.some((phrase) => command.includes(phrase));
+};
+
+const normaliseVoiceText = (text) => {
+  return typeof text === "string"
+    ? text
+        .toLowerCase()
+        .replace(/[.,!?;:]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    : "";
+};
+
+const splitVoiceCommands = (text) => {
+  const raw = normaliseVoiceText(text);
+  if (!raw) return [];
+
+  return raw
+    .split(/\b(?:and then|then|and)\b/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+};
+
 const getCommandAction = (text) => {
-    // converting text to lowercase
-  const command = typeof text === "string" ? text.toLowerCase().trim() : "";
-  
-  // matching the transcript against these predefined commands 
+const command = normaliseVoiceText(text);
+
   if (!command) return null;
+
   if (
-    command.includes("open recent document") ||
-    command.includes("open my recent document") ||
-    command.includes("open latest document") ||
-    command.includes("open recent file") ||
-    command.includes("open latest file")
+    matchesCommand(command, [
+      "open recent document",
+      "open my recent document",
+      "open latest document",
+      "open recent file",
+      "open latest file",
+    ])
   ) {
-// retrn an action object with screens, params and commands 
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: true,
-        autoFilterCategory: null,
-        commandNonce: Date.now(),
-      },
-    };
+    return { type: "openRecent" };
   }
 
   if (
-  command.includes("play latest summary") ||
-  command.includes("play newest summary") ||
-  command.includes("open latest summary") ||
-  command.includes("play my latest summary") ||
-  command.includes("play saved summary") ||
-  command.includes("play recent summary") ||
-  command.includes("open recent summary") ||
-  command.includes("open summary") ||
-  command.includes("play summary") ||
-  command.includes("open my summary") ||
-  command.includes("play my summary")
-) {
-  return {
-    command,
-    screen: "Library",
-    params: {
-      autoMostRecent: true,
-      commandNonce: Date.now(),
-    },
-  };
-}
-
-  if (
-    command.includes("open documents") ||
-    command.includes("go to documents") ||
-    command.includes("show documents") ||
-    command.includes("open document section")
+    matchesCommand(command, [
+      "open documents",
+      "go to documents",
+      "show documents",
+      "open document section",
+      "show my documents",
+      "take me to documents",
+      "open my files",
+      "show my files",
+    ])
   ) {
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: false,
-        autoFilterCategory: null,
-        commandNonce: Date.now(),
-      },
-    };
+    return { type: "openDocuments" };
   }
 
   if (
-    command.includes("finance") ||
-    command.includes("finance folder") ||
-    command.includes("finance documents") ||
-    command.includes("finance files")
+    matchesCommand(command, [
+      "finance",
+      "finance folder",
+      "finance documents",
+      "finance files",
+      "open finance",
+      "show finance",
+      "go to finance",
+      "my finance documents",
+      "finance docs",
+    ])
   ) {
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: false,
-        autoFilterCategory: "finance",
-        commandNonce: Date.now(),
-      },
-    };
+    return { type: "filterCategory", value: "finance" };
   }
 
   if (
-    command.includes("work") ||
-    command.includes("work folder") ||
-    command.includes("work documents") ||
-    command.includes("work files")
+    matchesCommand(command, [
+      "work",
+      "work folder",
+      "work documents",
+      "work files",
+    ])
   ) {
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: false,
-        autoFilterCategory: "work",
-        commandNonce: Date.now(),
-      },
-    };
+    return { type: "filterCategory", value: "work" };
   }
 
   if (
-    command.includes("study") ||
-    command.includes("study folder") ||
-    command.includes("study documents") ||
-    command.includes("study files")
+    matchesCommand(command, [
+      "study",
+      "study folder",
+      "study documents",
+      "study files",
+    ])
   ) {
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: false,
-        autoFilterCategory: "study",
-        commandNonce: Date.now(),
-      },
-    };
+    return { type: "filterCategory", value: "study" };
   }
 
   if (
-    command.includes("personal") ||
-    command.includes("personal folder") ||
-    command.includes("personal documents") ||
-    command.includes("personal files")
+    matchesCommand(command, [
+      "personal",
+      "personal folder",
+      "personal documents",
+      "personal files",
+    ])
   ) {
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: false,
-        autoFilterCategory: "personal",
-        commandNonce: Date.now(),
-      },
-    };
+    return { type: "filterCategory", value: "personal" };
   }
 
   if (
-    command.includes("legal") ||
-    command.includes("legal folder") ||
-    command.includes("legal documents") ||
-    command.includes("legal files")
+    matchesCommand(command, [
+      "legal",
+      "legal folder",
+      "legal documents",
+      "legal files",
+    ])
   ) {
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: false,
-        autoFilterCategory: "legal",
-        commandNonce: Date.now(),
-      },
-    };
+    return { type: "filterCategory", value: "legal" };
   }
 
   if (
-    command.includes("history") ||
-    command.includes("history folder") ||
-    command.includes("history documents") ||
-    command.includes("history files")
+    matchesCommand(command, [
+      "history",
+      "history folder",
+      "history documents",
+      "history files",
+    ])
   ) {
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: false,
-        autoFilterCategory: "history",
-        commandNonce: Date.now(),
-      },
-    };
+    return { type: "filterCategory", value: "history" };
   }
 
   if (
-    command.includes("other") ||
-    command.includes("other folder") ||
-    command.includes("other documents") ||
-    command.includes("other files") ||
-    command.includes("uncategorised") ||
-    command.includes("uncategorized")
+    matchesCommand(command, [
+      "other",
+      "other folder",
+      "other documents",
+      "other files",
+      "uncategorised",
+      "uncategorized",
+    ])
   ) {
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: false,
-        autoFilterCategory: "other",
-        commandNonce: Date.now(),
-      },
-    };
+    return { type: "filterCategory", value: "other" };
   }
 
   if (
-  command.startsWith("search ") ||
-  command.startsWith("find ") ||
-  command.startsWith("open document ") ||
-  command.startsWith("open file ")
-) {
-  const searchText = command
-    .replace("search ", "")
-    .replace("find ", "")
-    .replace("open document ", "")
-    .replace("open file ", "")
-    .trim();
-
-  if (searchText.length > 0) {
-    return {
-      command,
-      screen: "Documents",
-      params: {
-        autoOpenRecent: false,
-        autoFilterCategory: null,
-        autoSearchText: searchText,
-        commandNonce: Date.now(),
-      },
-    };
+    matchesCommand(command, [
+      "summarise it",
+      "summarise this",
+      "summarise document",
+      "summarise this document",
+      "summarize it",
+      "summarize this",
+      "summarize document",
+      "summarize this document",
+    ])
+  ) {
+    return { type: "summariseRecent" };
   }
-}
+
+  if (
+    matchesCommand(command, [
+      "listen to it",
+      "listen to this",
+      "listen to document",
+      "listen to this document",
+      "read it out",
+      "read this out",
+    ])
+  ) {
+    return { type: "listenRecent" };
+  }
+
+    if (
+    matchesCommand(command, [
+      "save it to the library",
+      "save this to the library",
+      "save summary to the library",
+      "save it",
+      "save this summary",
+      "save to library",
+      "add it to the library",
+      "add this to the library",
+    ])
+  ) {
+    return { type: "saveRecentSummary" };
+  }
+
+  if (
+    command.startsWith("search ") ||
+    command.startsWith("find ") ||
+    command.startsWith("open document ") ||
+    command.startsWith("open file ")
+  ) {
+    const searchText = command
+      .replace("search ", "")
+      .replace("find ", "")
+      .replace("open document ", "")
+      .replace("open file ", "")
+      .trim();
+
+    if (searchText.length > 0) {
+      return { type: "searchDocuments", value: searchText };
+    }
+  }
 
   return null;
 };
+
 //calling get command action text 
-  const handleVoiceCommand = (text) => {
-  const action = getCommandAction(text);
-// if no match show error if matches set status to executing 
-  if (!action) {
+const handleVoiceCommand = (text) => {
+  const parts = splitVoiceCommands(text);
+  const actions = parts.map(getCommandAction).filter(Boolean);
+
+  if (!actions.length) {
     alert("I couldn't understand that command. Please try again.");
     setStatus("idle");
     return;
   }
 
   setStatus("executing");
-  //store the matched command in transcript
-  setTranscript(action.command);
+  setTranscript(text);
 
-  navigation.navigate(action.screen, action.params);
-  // return the assistant to idle
+    const params = {
+    autoOpenRecent: false,
+    autoFilterCategory: null,
+    autoSearchText: "",
+    autoSummariseRecent: false,
+    autoListenRecent: false,
+    autoSaveRecentSummary: false,
+    commandNonce: Date.now(),
+  };
+
+  actions.forEach((action) => {
+    if (action.type === "openRecent") {
+      params.autoOpenRecent = true;
+    }
+
+    if (action.type === "openDocuments") {
+      params.autoOpenRecent = false;
+    }
+
+    if (action.type === "filterCategory") {
+      params.autoFilterCategory = action.value;
+    }
+
+    if (action.type === "searchDocuments") {
+      params.autoSearchText = action.value;
+    }
+
+    if (action.type === "summariseRecent") {
+      params.autoSummariseRecent = true;
+    }
+
+    if (action.type === "listenRecent") {
+      params.autoListenRecent = true;
+    }
+
+    if (action.type === "saveRecentSummary") {
+      params.autoSaveRecentSummary = true;
+    }
+  });
+
+  navigation.navigate("Documents", params);
+
   setTimeout(() => setStatus("idle"), 600);
 };
 
