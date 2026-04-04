@@ -1,5 +1,5 @@
 // screens/Documents.js
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View,
   FlatList,
@@ -73,7 +73,7 @@ function typeLabelAndColor(type) {
     case 'audio':
       return { label: 'Audio', bg: '#0EA5E9' };
     default:
-      return { label: 'Other', bg: '#64748B' };
+      return { label: 'Document', bg: '#6C63FF' };
   }
 }
 
@@ -146,6 +146,10 @@ export default function Documents({ route, navigation }) {
   const [summaryPickerMode, setSummaryPickerMode] = useState("short"); // "short" | "detailed"
   const CATEGORY_OPTIONS = ["finance", "history", "study", "legal", "work", "personal"];
 
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadCategory, setUploadCategory] = useState("");
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);  
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [categoryModalDoc, setCategoryModalDoc] = useState(null);
   const [categoryChoice, setCategoryChoice] = useState("");
@@ -153,11 +157,13 @@ export default function Documents({ route, navigation }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [taggingId, setTaggingId] = useState(null);
 
-const [menuVisible, setMenuVisible] = useState(false);
-const [menuDoc, setMenuDoc] = useState(null);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [menuDoc, setMenuDoc] = useState(null);
 
-const [kwModalVisible, setKwModalVisible] = useState(false);
-const [kwModalDoc, setKwModalDoc] = useState(null);
+  const [kwModalVisible, setKwModalVisible] = useState(false);
+  const [kwModalDoc, setKwModalDoc] = useState(null);
+  const [lastVoiceDoc, setLastVoiceDoc] = useState(null);
+  const [lastSuggestedVoiceDocs, setLastSuggestedVoiceDocs] = useState([]);
 
 const onAutoTag = async (doc, options = {}) => {
   const silent = options?.silent === true;
@@ -193,10 +199,6 @@ const onAutoTag = async (doc, options = {}) => {
   } finally {
     setTaggingId(null);
   }
-};
-
-const autoCategoriseSilently = (doc) => {
-  onAutoTag(doc, { silent: true });
 };
 
   // Viewer state
@@ -268,6 +270,7 @@ const handleMenuAction = async (action) => {
   const [ttsVisible, setTtsVisible] = useState(false);
   const [ttsText, setTtsText] = useState('');
   const [ttsContext, setTtsContext] = useState(null); // { docId, mode: 'doc'|'summary' }
+  const [ttsAutoPlayRequested, setTtsAutoPlayRequested] = useState(false);
 
   // Function URLs from .env 
   const TTS_FUNCTION_URL =
@@ -294,6 +297,43 @@ const handleMenuAction = async (action) => {
   });
 
   const ttsBusy = ttsStatus === 'generating' || ttsStatus === 'downloading';
+
+ useEffect(() => {
+  if (!ttsVisible || !ttsAutoPlayRequested || !ttsText) return;
+  if (ttsStatus === "playing") return;
+  if (ttsBusy) return;
+
+  const ctx = ttsContext;
+  const doc = files.find((d) => d.$id === ctx?.docId);
+
+  const run = async () => {
+    setTtsAutoPlayRequested(false);
+
+    try {
+      if (doc && ctx?.mode) {
+        await playWithCache({
+          doc,
+          mode: ctx.mode,
+          variant: ctx.variant,
+          text: ttsText,
+        });
+      } else {
+        await generateAndPlay(ttsText);
+      }
+    } catch (e) {
+      console.log("tts autoplay error", e);
+    }
+  };
+
+  run();
+}, [
+  ttsVisible,
+  ttsAutoPlayRequested,
+  ttsText,
+  ttsContext,
+  files,
+  ttsBusy,
+]);
 
   useEffect(() => {
     let mounted = true;
@@ -339,116 +379,356 @@ const handleMenuAction = async (action) => {
   }, [userId, load]);
 
 useEffect(() => {
-  //reading route params from Assistant.js
   const autoOpenRecent = route?.params?.autoOpenRecent === true;
   const autoFilterCategory = route?.params?.autoFilterCategory;
   const autoSearchText = route?.params?.autoSearchText || "";
+  const autoTargetText = route?.params?.autoTargetText || "";
+  const autoUseLastVoiceDoc = route?.params?.autoUseLastVoiceDoc === true;
+  const autoSuggestedMatchIndex =
+    typeof route?.params?.autoSuggestedMatchIndex === "number"
+      ? route.params.autoSuggestedMatchIndex
+      : null;
+  const autoFolderDocCategory = route?.params?.autoFolderDocCategory || "";
+  const autoFolderDocIndex =
+    typeof route?.params?.autoFolderDocIndex === "number"
+      ? route.params.autoFolderDocIndex
+      : null;
+  const autoOpenSummaryTarget = route?.params?.autoOpenSummaryTarget === true;
+  const autoListenSummaryTarget = route?.params?.autoListenSummaryTarget === true;
+  const autoSaveSummaryTarget = route?.params?.autoSaveSummaryTarget === true;
+  const autoSummariseRecent = route?.params?.autoSummariseRecent === true;
+  const autoListenRecent = route?.params?.autoListenRecent === true;
+  const autoSaveRecentSummary = route?.params?.autoSaveRecentSummary === true;
   const commandNonce = route?.params?.commandNonce;
 
   if (!commandNonce) return;
   if (!files || files.length === 0) return;
-//folder and catergory filtering
+
   if (autoFilterCategory) {
     setSelectedCategory(autoFilterCategory);
   } else {
     setSelectedCategory("all");
   }
-// handling voice search
+
   if (autoSearchText) {
     setSearchQuery(autoSearchText);
   } else {
     setSearchQuery("");
   }
-// opens newest doc automatically
-  if (autoOpenRecent) {
-    const mostRecent = files[0];
-    if (mostRecent) {
-      onOpen(mostRecent);
+
+        const runVoiceActions = async () => {
+    let workingDoc = null;
+
+    if (autoFolderDocCategory && autoFolderDocIndex !== null) {
+      const folderDocs = files.filter(
+        (doc) =>
+          (doc?.category || "").toLowerCase().trim() ===
+          autoFolderDocCategory.toLowerCase().trim()
+      );
+
+      workingDoc = folderDocs[autoFolderDocIndex] || null;
+
+      if (!workingDoc) {
+        Alert.alert("Voice command failed", "I couldn’t find that file in the folder.");
+        return;
+      }
+    } else if (autoSuggestedMatchIndex !== null) {
+
+    const folderDocs = files.filter(
+      (doc) =>
+        (doc?.category || "").toLowerCase().trim() ===
+        autoFolderDocCategory.toLowerCase().trim()
+    );
+
+    workingDoc = folderDocs[autoFolderDocIndex] || null;
+
+    if (!workingDoc) {
+      Alert.alert("Voice command failed", "I couldn’t find that file in the folder.");
+      return;
+    }
+  } else if (autoSuggestedMatchIndex !== null) {
+    workingDoc = lastSuggestedVoiceDocs?.[autoSuggestedMatchIndex] || null;
+
+    if (!workingDoc) {
+      Alert.alert(
+        "Voice command failed",
+        "I couldn’t find that suggested match anymore."
+      );
+      return;
+    }
+  } else if (autoUseLastVoiceDoc && lastVoiceDoc) {
+    workingDoc = lastVoiceDoc;
+  } else {
+    const ranked = getRankedVoiceTargetDocs({
+      files,
+      autoTargetText,
+      autoSearchText,
+      autoFilterCategory,
+    });
+
+    if (
+      (autoTargetText || autoSearchText) &&
+      ranked.length > 1 &&
+      hasAmbiguousTopMatches(ranked)
+    ) {
+      const topDocs = ranked
+        .slice(0, 3)
+        .map((item) => item?.doc)
+        .filter(Boolean);
+
+      setLastSuggestedVoiceDocs(topDocs);
+
+      const names = topDocs.map((doc, index) => {
+        const labels = ["First", "Second", "Third"];
+        return `${labels[index]}: ${doc.title}`;
+      });
+
+      Alert.alert(
+        "Multiple close matches found",
+        `I found a few close matches:\n\n${names.join("\n")}\n\nYou can say “open the first one”, “summarise the second one”, or “listen to the third one”.`
+      );
+      return;
+    }
+
+      const bestScore = ranked[0]?.score || 0;
+
+      if ((autoTargetText || autoSearchText) && bestScore < 35) {
+        Alert.alert("Voice command failed", "No matching document found.");
+        return;
+      }
+
+      workingDoc = resolveVoiceTargetDoc({
+        files,
+        autoTargetText,
+        autoSearchText,
+        autoFilterCategory,
+        autoOpenRecent,
+      });
+
+    if (!workingDoc) {
+      const likelyMatches = ranked
+        .slice(0, 3)
+        .map((item) => item?.doc?.title)
+        .filter(Boolean);
+
+      if (likelyMatches.length > 0) {
+        setLastSuggestedVoiceDocs(
+          ranked.slice(0, 3).map((item) => item?.doc).filter(Boolean)
+        );
+
+        Alert.alert(
+          "No exact match found",
+          `I couldn’t find an exact match.\n\nTop likely matches:\n- ${likelyMatches.join("\n- ")}\n\nYou can also say “open the first one” if one of these is correct.`
+        );
+      } else {
+        Alert.alert("Voice command failed", "No matching document found.");
+      }
+
+      return;
     }
   }
-// clearing params after exectution
-  navigation.setParams({
-    autoOpenRecent: false,
-    autoFilterCategory: null,
-    autoSearchText: "",
-    commandNonce: null,
+
+    setLastVoiceDoc(workingDoc);
+    setLastSuggestedVoiceDocs([]);
+
+        let summaryText = (workingDoc.summary || "").trim();
+
+    if (autoOpenRecent) {
+      await onOpen(workingDoc);
+    }
+
+    const needsSummaryTargetAction =
+      autoOpenSummaryTarget ||
+      autoListenSummaryTarget ||
+      autoSaveSummaryTarget;
+
+    if (autoSummariseRecent || needsSummaryTargetAction) {
+      if (!summaryText) {
+        try {
+          setSummarisingId(workingDoc.$id);
+
+          const result = await callSummariseFunction(workingDoc, "short");
+          const newSummary = (result?.summary || "").trim();
+
+          if (newSummary) {
+            summaryText = newSummary;
+
+            await updateDocFields(workingDoc.$id, { summary: newSummary });
+
+            workingDoc = {
+              ...workingDoc,
+              summary: newSummary,
+            };
+
+            setLastVoiceDoc(workingDoc);
+            await load();
+          } else {
+            Alert.alert("Summarise failed", "No summary was returned.");
+          }
+        } finally {
+          setSummarisingId(null);
+        }
+      }
+
+      if (autoSummariseRecent && summaryText) {
+        openVoiceSummaryResult(workingDoc, summaryText, "short");
+      }
+    }
+
+    if (autoOpenSummaryTarget && summaryText) {
+      openVoiceSummaryResult(workingDoc, summaryText, "short");
+    }
+
+    if (autoSaveRecentSummary || autoSaveSummaryTarget) {
+      const finalSummary = summaryText || (workingDoc.summary || "").trim();
+
+      if (finalSummary) {
+        await saveSummaryToLibraryDirect(workingDoc, finalSummary, "short");
+        Alert.alert("Saved", "Summary saved to your Library.");
+      } else {
+        Alert.alert("Save failed", "No summary available to save.");
+      }
+    }
+
+   if (autoListenSummaryTarget && summaryText) {
+  await autoPlayTtsForDoc(workingDoc, "summary", "short", summaryText);
+}
+
+if (autoListenRecent) {
+  await onListenDoc(workingDoc, { autoPlay: true });
+}
+  };
+
+  runVoiceActions().catch((e) => {
+    Alert.alert("Voice command failed", e?.message || "Please try again.");
   });
+
+navigation.setParams({
+  autoOpenRecent: false,
+  autoFilterCategory: null,
+  autoSearchText: "",
+  autoTargetText: "",
+  autoUseLastVoiceDoc: false,
+  autoSuggestedMatchIndex: null,
+  autoFolderDocCategory: "",
+  autoFolderDocIndex: null,
+  autoOpenSummaryTarget: false,
+  autoListenSummaryTarget: false,
+  autoSaveSummaryTarget: false,
+  autoSummariseRecent: false,
+  autoListenRecent: false,
+  autoSaveRecentSummary: false,
+  commandNonce: null,
+});
 }, [route?.params?.commandNonce, files]);
 
   /* ─ uploads ─ */
 
-  const onUploadFile = async () => {
-    if (!userId) {
-      Alert.alert('Not logged in', 'Session not ready yet. Please wait a second.');
-      return;
-    }
-// opening document picker
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
-        copyToCacheDirectory: true,
-      });
+ const onUploadFile = async () => {
+  if (!userId) {
+    Alert.alert('Not logged in', 'Session not ready yet. Please wait a second.');
+    return;
+  }
 
-      if (result.canceled) return;
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: '*/*',
+      copyToCacheDirectory: true,
+    });
 
-      const asset = result.assets?.[0];
-      if (!asset) return;
-// uploading file using - 
-  const createdDoc = await uploadUserDoc(userId, {
-  uri: asset.uri,
-  name: asset.name || "document",
-  type: asset.mimeType || "application/octet-stream",
-  size: asset.size || 0,
-});
-// calling auto categorise silently and reloading documnet list
-autoCategoriseSilently(createdDoc);
+    if (result.canceled) return;
 
-await load();
-    } catch (e) {
-      console.log('upload file error', e);
-      Alert.alert('Upload failed', e?.message || 'Please try again.');
-    }
-  };
+    const asset = result.assets?.[0];
+    if (!asset) return;
+
+    const fileToUpload = {
+      uri: asset.uri,
+      name: asset.name || "document",
+      type: asset.mimeType || "application/octet-stream",
+      size: asset.size || 0,
+    };
+
+    setPendingFile(fileToUpload);
+    setUploadTitle(fileToUpload.name || "");
+    setUploadCategory("");
+    setShowUploadModal(true);
+  } catch (e) {
+    console.log('upload file error', e);
+    Alert.alert('Upload failed', e?.message || 'Please try again.');
+  }
+};
 
   const onTakePhoto = async () => {
-    if (!userId) {
-      Alert.alert('Not logged in', 'Session not ready yet. Please wait a second.');
+  if (!userId) {
+    Alert.alert('Not logged in', 'Session not ready yet. Please wait a second.');
+    return;
+  }
+
+  try {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Camera access is required.');
       return;
     }
 
-    try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission required', 'Camera access is required.');
-        return;
-      }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
 
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
-      });
+    if (result.canceled) return;
 
-      if (result.canceled) return;
+    const asset = result.assets?.[0];
+    if (!asset) return;
 
-      const asset = result.assets?.[0];
-      if (!asset) return;
+    const fileToUpload = {
+      uri: asset.uri,
+      name: `Photo_${Date.now()}.jpg`,
+      type: asset.mimeType || "image/jpeg",
+      size: asset.fileSize || 0,
+    };
 
-  const createdDoc = await uploadUserDoc(userId, {
-  uri: asset.uri,
-  name: `Photo_${Date.now()}.jpg`,
-  type: asset.mimeType || "image/jpeg",
-  size: asset.fileSize || 0,
-});
+    setPendingFile(fileToUpload);
+    setUploadTitle(fileToUpload.name || "");
+    setUploadCategory("");
+    setShowUploadModal(true);
+  } catch (e) {
+    console.log('take photo error', e);
+    Alert.alert('Upload failed', e?.message || 'Please try again.');
+  }
+};
 
-autoCategoriseSilently(createdDoc);
+const confirmUpload = async () => {
+  if (!userId || !pendingFile) return;
 
-await load();
+  try {
+    const finalTitle = uploadTitle.trim() || pendingFile.name || "document";
 
-    } catch (e) {
-      console.log('take photo error', e);
-      Alert.alert('Upload failed', e?.message || 'Please try again.');
-    }
-  };
+    const createdDoc = await uploadUserDoc(userId, {
+      ...pendingFile,
+      title: finalTitle,
+      category: uploadCategory,
+    });
+
+    setShowUploadModal(false);
+    setPendingFile(null);
+    setUploadTitle("");
+    setUploadCategory("");
+
+    await onAutoTag(createdDoc, { silent: true });
+    await load();
+  } catch (e) {
+    console.log('confirm upload error', e);
+    Alert.alert('Upload failed', e?.message || 'Please try again.');
+  }
+};
+
+const closeUploadModal = () => {
+  setShowUploadModal(false);
+  setPendingFile(null);
+  setUploadTitle("");
+  setUploadCategory("");
+};
 
   /* ─ open file ─ */
 
@@ -566,23 +846,43 @@ keywords: doc.keywords || "",
 if (isDetailed) {
   const existingDetailed = (cache.summaryDetailedText || "").trim();
   if (existingDetailed) {
-    Alert.alert("AI Summary (Detailed)", existingDetailed, [
-      {
-        text: "Listen",
-        onPress: () => {
-          setTtsText(existingDetailed);
-          setTtsContext({ docId: doc.$id, mode: "summary", variant: "detailed" });
-          setTtsVisible(true);
-        },
-      },
-      { text: "OK", style: "default" },
-    ]);
+    Alert.alert("AI Summary (Detailed)", newSummary, [
+  {
+    text: "Listen",
+    onPress: () => {
+      setTtsText(newSummary);
+      setTtsContext({ docId: doc.$id, mode: "summary", variant: "detailed" });
+      setTtsVisible(true);
+    },
+  },
+  {
+    text: "Save to Library",
+    onPress: async () => {
+      try {
+        await saveToLibrary({
+          userId,
+          docId: doc.$id,
+          title: doc.title,
+          summaryType: "detailed",
+          summaryText: newSummary,
+          audioFileId: "",
+          category: doc.category || "",
+          keywords: doc.keywords || "",
+        });
+        Alert.alert("Saved", "Detailed summary saved to your Library.");
+      } catch (e) {
+        Alert.alert("Save failed", e?.message || "Could not save summary.");
+      }
+    },
+  },
+  { text: "OK", style: "default" },
+]);
     return;
   }
 }
 
     // Not cached, so call function 
-    const result = await callSummariseFunction(doc);
+    const result = await callSummariseFunction(doc, mode);
 
     const newSummary = (result?.summary || "").trim();
 
@@ -653,16 +953,182 @@ if (!isDetailed) {
   }
 };
 
+const getRankedVoiceTargetDocs = ({
+  files,
+  autoTargetText,
+  autoSearchText,
+  autoFilterCategory,
+}) => {
+  if (!Array.isArray(files) || files.length === 0) return [];
+
+  const normalise = (value) =>
+    typeof value === "string"
+      ? value.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim()
+      : "";
+
+  const targetText = normalise(autoTargetText || autoSearchText);
+  const filterCategory = normalise(autoFilterCategory);
+
+  let candidates = [...files];
+
+  if (filterCategory) {
+    candidates = candidates.filter(
+      (doc) => normalise(doc?.category) === filterCategory
+    );
+  }
+
+  if (!targetText) {
+    return candidates.map((doc) => ({ doc, score: 1 }));
+  }
+
+  const scoreDoc = (doc) => {
+  const title = normalise(doc?.title);
+  const keywords = normalise(doc?.keywords);
+  const summary = normalise(doc?.summary);
+  const textContent = normalise(doc?.textContent);
+  const category = normalise(doc?.category);
+
+  let score = 0;
+
+  // exact title match
+  if (title === targetText) score += 120;
+
+  // strong title match
+  if (title.includes(targetText)) score += 80;
+
+  // all words in title
+  if (targetText.split(" ").every((w) => title.includes(w))) score += 60;
+
+  // category match
+  if (category && targetText.includes(category)) score += 50;
+
+  // keywords
+  if (keywords.includes(targetText)) score += 40;
+
+  // summary
+  if (summary.includes(targetText)) score += 20;
+
+  // fallback 
+  if (score === 0 && textContent.includes(targetText)) score += 10;
+
+  return score;
+};
+
+  return candidates
+    .map((doc) => ({ doc, score: scoreDoc(doc) }))
+    .sort((a, b) => b.score - a.score);
+};
+
+const hasAmbiguousTopMatches = (ranked = []) => {
+  if (!Array.isArray(ranked) || ranked.length < 2) return false;
+
+  const first = ranked[0]?.score || 0;
+  const second = ranked[1]?.score || 0;
+
+  if (first <= 0 || second <= 0) return false;
+
+  return Math.abs(first - second) <= 15;
+};
+
+const resolveVoiceTargetDoc = ({
+  files,
+  autoTargetText,
+  autoSearchText,
+  autoFilterCategory,
+  autoOpenRecent,
+}) => {
+  const ranked = getRankedVoiceTargetDocs({
+    files,
+    autoTargetText,
+    autoSearchText,
+    autoFilterCategory,
+  });
+
+  if (!ranked.length) return null;
+
+  if (!autoTargetText && !autoSearchText) {
+    return ranked[0]?.doc || null;
+  }
+
+ if (ranked[0]?.score >= 40)  {
+    return ranked[0].doc;
+  }
+
+  if (autoOpenRecent) {
+    return ranked[0]?.doc || null;
+  }
+
+  return null;
+};
+
+const openVoiceSummaryResult = (doc, summaryText, summaryType = "short") => {
+  const cleanSummary = (summaryText || "").trim();
+  if (!cleanSummary) return;
+
+  Alert.alert("AI Summary (Short)", cleanSummary, [
+    {
+      text: "Listen",
+      onPress: () => {
+        setTtsText(cleanSummary);
+        setTtsContext({ docId: doc.$id, mode: "summary", variant: "short" });
+        setTtsVisible(true);
+      },
+    },
+    {
+      text: "Save to Library",
+      onPress: async () => {
+        try {
+          await saveSummaryToLibraryDirect(doc, cleanSummary, summaryType);
+          Alert.alert("Saved", "Summary saved to your Library.");
+        } catch (e) {
+          Alert.alert("Save failed", e?.message || "Could not save summary.");
+        }
+      },
+    },
+    { text: "OK", style: "default" },
+  ]);
+};
+
+const saveSummaryToLibraryDirect = async (doc, summaryText, summaryType = "short") => {
+  if (!userId) {
+    throw new Error("User session not ready.");
+  }
+
+  if (!doc?.$id) {
+    throw new Error("Missing document.");
+  }
+
+  const cleanSummary = (summaryText || "").trim();
+  if (!cleanSummary) {
+    throw new Error("No summary available to save.");
+  }
+
+  await saveToLibrary({
+    userId,
+    docId: doc.$id,
+    title: doc.title,
+    summaryType,
+    summaryText: cleanSummary,
+    audioFileId: "",
+    category: doc.category || "",
+    keywords: doc.keywords || "",
+  });
+};
 
   /* ─Listen full doc auto extract ─*/
+const onListenDoc = async (doc, options = {}) => {
+  const autoPlay = options?.autoPlay === true;
 
-const onListenDoc = async (doc) => {
   try {
     const existing = (doc.textContent || "").trim();
     if (existing) {
-      setTtsText(existing);
-      setTtsContext({ docId: doc.$id, mode: "doc" });
-      setTtsVisible(true);
+      if (autoPlay) {
+        await autoPlayTtsForDoc(doc, "doc", undefined, existing);
+      } else {
+        setTtsText(existing);
+        setTtsContext({ docId: doc.$id, mode: "doc" });
+        setTtsVisible(true);
+      }
       return;
     }
 
@@ -671,21 +1137,22 @@ const onListenDoc = async (doc) => {
       "No text extracted yet — extracting text now. This can take a few seconds…"
     );
 
-    // Calls extractDocumentText
     const result = await callExtractTextFunction(doc);
 
-    // If the function returns text immediately, use it
     const returnedText =
       (result?.textContent || result?.extractedText || result?.text || "").trim();
-// shows tts modal 
+
     if (returnedText) {
-      setTtsText(returnedText);
-      setTtsContext({ docId: doc.$id, mode: "doc" });
-      setTtsVisible(true);
+      if (autoPlay) {
+        await autoPlayTtsForDoc(doc, "doc", undefined, returnedText);
+      } else {
+        setTtsText(returnedText);
+        setTtsContext({ docId: doc.$id, mode: "doc" });
+        setTtsVisible(true);
+      }
       return;
     }
 
-    // Otherwise re-fetch docs and read textContent from DB
     const freshDocs = await listUserDocs(userId);
     setFiles(freshDocs);
 
@@ -700,9 +1167,13 @@ const onListenDoc = async (doc) => {
       return;
     }
 
-    setTtsText(finalText);
-    setTtsContext({ docId: doc.$id, mode: "doc" });
-    setTtsVisible(true);
+    if (autoPlay) {
+      await autoPlayTtsForDoc(refreshed || doc, "doc", undefined, finalText);
+    } else {
+      setTtsText(finalText);
+      setTtsContext({ docId: doc.$id, mode: "doc" });
+      setTtsVisible(true);
+    }
   } catch (e) {
     console.log("listen doc error", e);
     Alert.alert("Listen failed", e?.message || "Try again.");
@@ -948,13 +1419,30 @@ const Item = ({ item }) => {
   });
 };
 
+const autoPlayTtsForDoc = async (doc, mode, variant, text) => {
+  setTtsText(text);
+  setTtsContext({ docId: doc.$id, mode, variant });
+  setTtsVisible(true);
+  setTtsAutoPlayRequested(true);
+};
+
 
   return (
     <StyledContainer>
       <StatusBar style="dark" />
       <InnerContainer style={{ width: '100%', flex: 1, alignSelf: 'stretch' }}>
-        <PageTitle style={{ textAlign: 'center' }}>Documents</PageTitle>
-        <SubTitle style={{ textAlign: 'center', marginBottom: 12 }}>Your uploaded files</SubTitle>
+      <PageTitle style={{ textAlign: "center", color: "#4F46E5" }}>Documents</PageTitle>
+      <SubTitle
+  style={{
+    textAlign: "center",
+    marginBottom: 16,
+    color: "#475569",
+    lineHeight: 20,
+    paddingHorizontal: 8,
+  }}
+>
+         Upload, organise, summarise, and listen to your files in one place.
+       </SubTitle>
 
         <View style={{ flexDirection: 'row', marginBottom: 12 }}>
           <TouchableOpacity
@@ -1020,22 +1508,29 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
 
  ListHeaderComponent={
   <View style={{ width: "100%", alignSelf: "stretch" }}>
-      <TextInput
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholder="Search documents..."
-        placeholderTextColor="#9CA3AF"
-        style={{
-        width: "100%",
-        alignSelf: "stretch",
-        backgroundColor: "#F3F4F6",
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        marginTop: 14,
-        marginBottom: 12,
-     }}
-      />
+   <TextInput
+  value={searchQuery}
+  onChangeText={setSearchQuery}
+  placeholder="Search documents..."
+  placeholderTextColor="#9CA3AF"
+  style={{
+    width: "100%",
+    alignSelf: "stretch",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginTop: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  }}
+/>
 
            {selectedCategory && selectedCategory !== "all" ? (
   <View style={{ width: "100%", alignSelf: "stretch", marginBottom: 18 }}>
@@ -1094,6 +1589,121 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
   }
 />
 </InnerContainer>
+
+<Modal
+  visible={showUploadModal}
+  transparent
+  animationType="fade"
+  onRequestClose={closeUploadModal}
+>
+  <TouchableOpacity
+    activeOpacity={1}
+    onPress={closeUploadModal}
+    style={{
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      justifyContent: "center",
+      padding: 18,
+    }}
+  >
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={() => {}}
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
+      }}
+    >
+      <Text style={{ fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
+        Upload document
+      </Text>
+
+      <Text style={{ marginBottom: 6, fontSize: 12, color: "#64748B" }}>
+        Title
+      </Text>
+
+      <TextInput
+        value={uploadTitle}
+        onChangeText={setUploadTitle}
+        placeholder="Enter document title"
+        placeholderTextColor="#94A3B8"
+        style={{
+          width: "100%",
+          backgroundColor: "#F1F5F9",
+          borderRadius: 12,
+          paddingHorizontal: 14,
+          paddingVertical: 10,
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+          color: "#0F172A",
+          marginBottom: 12,
+        }}
+      />
+
+      <Text style={{ marginBottom: 8, fontSize: 12, color: "#64748B" }}>
+        Category (optional)
+      </Text>
+
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {CATEGORY_OPTIONS.map((c) => {
+          const selected = uploadCategory === c;
+
+          return (
+            <TouchableOpacity
+              key={c}
+              onPress={() => setUploadCategory(selected ? "" : c)}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: selected ? brand : "#E2E8F0",
+                backgroundColor: selected ? brand : "#F8FAFC",
+              }}
+            >
+              <Text style={{ color: selected ? "#fff" : "#0F172A", fontWeight: "800" }}>
+                {c}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+        <TouchableOpacity
+          onPress={closeUploadModal}
+          style={{
+            flex: 1,
+            paddingVertical: 12,
+            borderRadius: 12,
+            backgroundColor: "#F1F5F9",
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ color: "#0F172A", fontWeight: "900" }}>Cancel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={confirmUpload}
+          style={{
+            flex: 1,
+            paddingVertical: 12,
+            borderRadius: 12,
+            backgroundColor: brand,
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "900" }}>Upload</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  </TouchableOpacity>
+</Modal>
 
 <Modal
   visible={menuVisible}
@@ -1414,6 +2024,79 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
   </TouchableOpacity>
 </Modal>
 
+      <Modal
+        visible={!!summarisingId}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <View
+  style={{
+    width: "100%",
+    maxWidth: 330,
+    backgroundColor: "#fff",
+    borderRadius: 22,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  }}
+>
+  <View
+    style={{
+      width: 62,
+      height: 62,
+      borderRadius: 20,
+      backgroundColor: "rgba(79,70,229,0.10)",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 14,
+    }}
+  >
+    <ActivityIndicator size="large" color={brand} />
+  </View>
+
+  <Text
+    style={{
+      fontSize: 18,
+      fontWeight: "900",
+      color: "#0F172A",
+      textAlign: "center",
+    }}
+  >
+    Creating summary
+  </Text>
+
+  <Text
+    style={{
+      marginTop: 8,
+      fontSize: 13,
+      color: "#64748B",
+      textAlign: "center",
+      lineHeight: 20,
+      maxWidth: 250,
+    }}
+  >
+    Please wait while ExecuDoc generates your summary. This can take a few seconds.
+  </Text>
+</View>
+        </View>
+      </Modal>
+
       {/* TTS Modal */}
       <Modal
         visible={ttsVisible}
@@ -1424,91 +2107,157 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
           setTtsVisible(false);
         }}
       >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: '#fff', padding: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '75%' }}>
-            <Text style={{ fontSize: 18, fontWeight: '800', marginBottom: 10 }}>
-              {ttsContext?.mode === 'doc' ? 'Document' : 'Summary'}
-            </Text>
+<View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" }}>
+  <View
+    style={{
+      backgroundColor: "#fff",
+      padding: 16,
+      borderTopLeftRadius: 22,
+      borderTopRightRadius: 22,
+      maxHeight: "78%",
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+    }}
+  >
+           <View
+  style={{
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  }}
+>
+  <Text style={{ fontSize: 12, fontWeight: "800", color: "#64748B" }}>
+    {ttsContext?.mode === "doc" ? "DOCUMENT AUDIO" : "SUMMARY AUDIO"}
+  </Text>
+  <Text style={{ marginTop: 4, fontSize: 20, fontWeight: "900", color: "#0F172A" }}>
+    {ttsContext?.mode === "doc" ? "Listen to document" : "Listen to summary"}
+  </Text>
+</View>
 
-            <ScrollView style={{ marginBottom: 12 }}>
-              <Text style={{ fontSize: 15, lineHeight: 21 }}>{ttsText}</Text>
-            </ScrollView>
+<ScrollView
+  style={{
+    marginBottom: 12,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  }}
+>
+  <Text style={{ fontSize: 15, lineHeight: 22, color: "#0F172A" }}>{ttsText}</Text>
+</ScrollView>
 
             {ttsBusy && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <ActivityIndicator />
-                <Text>{ttsStatus === 'generating' ? 'Generating audio…' : 'Downloading audio…'}</Text>
-              </View>
-            )}
+  <View
+    style={{
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 12,
+      backgroundColor: "#EEF2FF",
+      borderRadius: 14,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderWidth: 1,
+      borderColor: "#C7D2FE",
+    }}
+  >
+    <ActivityIndicator color={brand} />
+    <Text style={{ color: "#3730A3", fontWeight: "700" }}>
+      {ttsStatus === "generating" ? "Generating audio…" : "Downloading audio…"}
+    </Text>
+  </View>
+)}
 
             {!!ttsError && <Text style={{ color: 'red', marginBottom: 10 }}>{ttsError}</Text>}
+<View style={{ marginTop: 4 }}>
+  <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+    <TouchableOpacity
+      onPress={async () => {
+        const ctx = ttsContext;
+        if (!ctx?.docId) {
+          await generateAndPlay(ttsText);
+          return;
+        }
 
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-              <TouchableOpacity
-                onPress={async () => {
-                  const ctx = ttsContext;
-                  if (!ctx?.docId) {
-                    await generateAndPlay(ttsText);
-                    return;
-                  }
+        const doc = files.find((d) => d.$id === ctx.docId);
+        if (!doc) {
+          await generateAndPlay(ttsText);
+          return;
+        }
 
-                  const doc = files.find((d) => d.$id === ctx.docId);
-                  if (!doc) {
-                    await generateAndPlay(ttsText);
-                    return;
-                  }
+        await playWithCache({ doc, mode: ctx.mode, variant: ctx.variant, text: ttsText });
+      }}
+      disabled={ttsBusy}
+      style={{
+        flex: 1,
+        minWidth: 110,
+        paddingVertical: 13,
+        backgroundColor: ttsBusy ? "#CBD5E1" : brand,
+        borderRadius: 14,
+        alignItems: "center",
+      }}
+    >
+      <Text style={{ color: "#fff", fontWeight: "900" }}>Listen</Text>
+    </TouchableOpacity>
 
-                  await playWithCache({ doc, mode: ctx.mode, variant: ctx.variant, text: ttsText });
+    <TouchableOpacity
+      onPress={ttsStatus === "paused" ? resume : pause}
+      disabled={!(ttsStatus === "playing" || ttsStatus === "paused")}
+      style={{
+        flex: 1,
+        minWidth: 110,
+        paddingVertical: 13,
+        backgroundColor: "#0F172A",
+        borderRadius: 14,
+        alignItems: "center",
+        opacity: ttsStatus === "playing" || ttsStatus === "paused" ? 1 : 0.4,
+      }}
+    >
+      <Text style={{ color: "#fff", fontWeight: "900" }}>
+        {ttsStatus === "paused" ? "Resume" : "Pause"}
+      </Text>
+    </TouchableOpacity>
+  </View>
 
-                }}
-                disabled={ttsBusy}
-                style={{
-                  padding: 12,
-                  backgroundColor: ttsBusy ? '#ccc' : '#111',
-                  borderRadius: 10,
-                }}
-              >
-                <Text style={{ color: '#fff' }}>Listen</Text>
-              </TouchableOpacity>
+  <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+    <TouchableOpacity
+      onPress={stop}
+      disabled={!(ttsStatus === "playing" || ttsStatus === "paused")}
+      style={{
+        flex: 1,
+        paddingVertical: 13,
+        backgroundColor: "#F1F5F9",
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        alignItems: "center",
+        opacity: ttsStatus === "playing" || ttsStatus === "paused" ? 1 : 0.5,
+      }}
+    >
+      <Text style={{ color: "#0F172A", fontWeight: "900" }}>Stop</Text>
+    </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={ttsStatus === 'paused' ? resume : pause}
-                disabled={!(ttsStatus === 'playing' || ttsStatus === 'paused')}
-                style={{
-                  padding: 12,
-                  backgroundColor: '#333',
-                  borderRadius: 10,
-                  opacity: ttsStatus === 'playing' || ttsStatus === 'paused' ? 1 : 0.4,
-                }}
-              >
-                <Text style={{ color: '#fff' }}>
-                  {ttsStatus === 'paused' ? 'Resume' : 'Pause'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={stop}
-                disabled={!(ttsStatus === 'playing' || ttsStatus === 'paused')}
-                style={{
-                  padding: 12,
-                  backgroundColor: '#333',
-                  borderRadius: 10,
-                  opacity: ttsStatus === 'playing' || ttsStatus === 'paused' ? 1 : 0.4,
-                }}
-              >
-                <Text style={{ color: '#fff' }}>Stop</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => {
-                  stop();
-                  setTtsVisible(false);
-                }}
-                style={{ padding: 12, backgroundColor: '#eee', borderRadius: 10 }}
-              >
-                <Text>Close</Text>
-              </TouchableOpacity>
-            </View>
+    <TouchableOpacity
+      onPress={() => {
+        stop();
+        setTtsVisible(false);
+      }}
+      style={{
+        flex: 1,
+        paddingVertical: 13,
+        backgroundColor: "#F8FAFC",
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        alignItems: "center",
+      }}
+    >
+      <Text style={{ color: "#0F172A", fontWeight: "900" }}>Close</Text>
+    </TouchableOpacity>
+  </View>
+</View>
           </View>
         </View>
       </Modal>
