@@ -116,6 +116,8 @@ function mapCategory(rawCategory, keywords, title) {
 
   const combined = `${c} ${kw} ${t}`.replace(/\s+/g, " ").trim();
 
+  if (ALLOWED_CATEGORIES.includes(c) && c !== "other") return c;
+
   // finance
   if (
     combined.includes("account") ||
@@ -229,6 +231,8 @@ export async function uploadUserDoc(userId, file) {
   const mimeType = file.type || "application/octet-stream";
   const size = file.size || 0;
   const fileType = guessFileType(file.type || file.name);
+  const title = (file.title || file.name || "document").trim();
+  const category = (file.category || "").trim().toLowerCase();
 
   const storedFile = await storage.createFile({
     bucketId: BUCKET_ID,
@@ -242,14 +246,14 @@ export async function uploadUserDoc(userId, file) {
     ID.unique(),
         {// metadate in new documents row 
       userID: userId,
-      title: name,
-      fileId: storedFile.$id,
+      title,
+      fileId: storedFile.$id,   
       fileType,
       mimeType,
       textContent: "",
       summary: "",
       ttsSummaryParts: "",
-      category: "",
+      category,
       keywords: "",
     }
   );
@@ -362,7 +366,7 @@ export async function updateTtsCacheField(docId, ttsSummaryPartsJson) {
 }
 
 // AI summariser 
-export async function callSummariseFunction(doc) {
+export async function callSummariseFunction(doc, mode = "short") {
   const docId = typeof doc === "string" ? doc : doc?.$id;
   if (!docId) throw new Error("Missing docId for summariser.");
 
@@ -372,6 +376,7 @@ export async function callSummariseFunction(doc) {
 
   const payload = {
     docId,
+    mode,
     ...(fileUrl ? { fileUrl } : {}),
     ...(mimeType ? { mimeType } : {}),
   };
@@ -491,17 +496,24 @@ export async function callTagFunction(doc) {
 
   if (parsed?.error) throw new Error(parsed.error);
 // get ai results
-  const category = parsed?.category;
-  const keywords = parsed?.keywords;
-// map category to app folders
-  const mappedCategory = mapCategory(category, keywords, doc?.title);
+const category = parsed?.category;
+const keywords = parsed?.keywords;
+const existingCategory = (doc?.category || "").toString().trim();
+const mappedCategory = mapCategory(category, keywords, doc?.title);
 
- if (mappedCategory || keywords) {
-  try { // save resulta
-    await updateDocFields(docId, {
-      category: mappedCategory,
-      ...(keywords ? { keywords } : {}),
-    });
+const patch = {};
+
+if (!existingCategory && mappedCategory) {
+  patch.category = mappedCategory;
+}
+
+if (keywords) {
+  patch.keywords = keywords;
+}
+
+if (Object.keys(patch).length > 0) {
+  try {
+    await updateDocFields(docId, patch);
   } catch (e) {
     console.log("updateDocFields(tag) failed:", e?.message || e);
   }
