@@ -10,14 +10,16 @@ import {
   SubTitle,
   Colors,
 } from '../components/styles';
+
 import {
-  databases,
-  DB_ID,
-  PROFILES_ID,
-  DOCUMENTS_ID,
-  SAVED_ITEMS_ID,
+  databasesClient,
+  DATABASE_ID,
+  PROFILES_COLLECTION_ID,
+  DOCUMENTS_COLLECTION_ID,
+  SAVED_ITEMS_COLLECTION_ID,
   Query,
 } from '../services/appwrite';
+
 const { brand } = Colors;
 
 export default function Welcome({
@@ -39,22 +41,22 @@ export default function Welcome({
     try {
       if (!user?.id) return;
 
-      const [profileRes, docsRes, savedRes] = await Promise.all([
-        databases.listDocuments(DB_ID, PROFILES_ID, [
-          Query.equal('userID', user.id),
-          Query.limit(1),
-        ]),
-        databases.listDocuments(DB_ID, DOCUMENTS_ID, [
-          Query.equal('userID', user.id),
-          Query.orderDesc('$createdAt'),
-          Query.limit(3),
-        ]),
-        databases.listDocuments(DB_ID, SAVED_ITEMS_ID, [
-          Query.equal('userID', user.id),
-          Query.orderDesc('$createdAt'),
-          Query.limit(3),
-        ]),
-      ]);
+    const [profileRes, docsRes, savedRes] = await Promise.all([
+       databasesClient.listDocuments(DATABASE_ID, PROFILES_COLLECTION_ID, [
+        Query.equal('userID', user.id),
+        Query.limit(1),
+       ]),
+       databasesClient.listDocuments(DATABASE_ID, DOCUMENTS_COLLECTION_ID, [
+        Query.equal('userID', user.id),
+        Query.orderDesc('$createdAt'),
+        Query.limit(3),
+       ]),
+       databasesClient.listDocuments(DATABASE_ID, SAVED_ITEMS_COLLECTION_ID, [
+        Query.equal('userID', user.id),
+        Query.orderDesc('$createdAt'),
+        Query.limit(3),
+       ]),
+     ]);
 
       const profileDoc = profileRes.documents?.[0];
       const fullName = profileDoc

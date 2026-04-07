@@ -27,6 +27,7 @@ export const APPWRITE_PROJECT_ID = env(
 );
 
 export const DATABASE_ID = "execudoc_db";
+export const PROFILES_COLLECTION_ID = "profiles";
 export const DOCUMENTS_COLLECTION_ID = "documents";
 export const BUCKET_ID = "69202f250019fb07635d";
 
