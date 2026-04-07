@@ -846,37 +846,37 @@ keywords: doc.keywords || "",
 if (isDetailed) {
   const existingDetailed = (cache.summaryDetailedText || "").trim();
   if (existingDetailed) {
-    Alert.alert("AI Summary (Detailed)", newSummary, [
-  {
-    text: "Listen",
-    onPress: () => {
-      setTtsText(newSummary);
-      setTtsContext({ docId: doc.$id, mode: "summary", variant: "detailed" });
-      setTtsVisible(true);
-    },
-  },
-  {
-    text: "Save to Library",
-    onPress: async () => {
-      try {
-        await saveToLibrary({
-          userId,
-          docId: doc.$id,
-          title: doc.title,
-          summaryType: "detailed",
-          summaryText: newSummary,
-          audioFileId: "",
-          category: doc.category || "",
-          keywords: doc.keywords || "",
-        });
-        Alert.alert("Saved", "Detailed summary saved to your Library.");
-      } catch (e) {
-        Alert.alert("Save failed", e?.message || "Could not save summary.");
-      }
-    },
-  },
-  { text: "OK", style: "default" },
-]);
+    Alert.alert("AI Summary (Detailed)", existingDetailed, [
+      {
+        text: "Listen",
+        onPress: () => {
+          setTtsText(existingDetailed);
+          setTtsContext({ docId: doc.$id, mode: "summary", variant: "detailed" });
+          setTtsVisible(true);
+        },
+      },
+      {
+        text: "Save to Library",
+        onPress: async () => {
+          try {
+            await saveToLibrary({
+              userId,
+              docId: doc.$id,
+              title: doc.title,
+              summaryType: "detailed",
+              summaryText: existingDetailed,
+              audioFileId: "",
+              category: doc.category || "",
+              keywords: doc.keywords || "",
+            });
+            Alert.alert("Saved", "Detailed summary saved to your Library.");
+          } catch (e) {
+            Alert.alert("Save failed", e?.message || "Could not save summary.");
+          }
+        },
+      },
+      { text: "OK", style: "default" },
+    ]);
     return;
   }
 }
