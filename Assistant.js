@@ -221,6 +221,10 @@ const getOrdinalIndex = (command) => {
   return null;
 };
 
+const hasOrdinalReference = (command) => {
+  return getOrdinalIndex(command) !== null;
+};
+
 const getCommandAction = (text) => {
   const command = normaliseVoiceText(text);
   const targetText = extractTargetText(command);
@@ -333,93 +337,100 @@ if (
 }
 
   if (
-    matchesCommand(command, [
-      "finance folder",
-      "finance documents",
-      "finance files",
-      "open finance",
-      "show finance",
-      "go to finance",
-      "my finance documents",
-      "finance docs",
-    ])
-  ) {
-    return { type: "filterCategory", value: "finance" };
-  }
+  !hasOrdinalReference(command) &&
+  matchesCommand(command, [
+    "finance folder",
+    "finance documents",
+    "finance files",
+    "open finance",
+    "show finance",
+    "go to finance",
+    "my finance documents",
+    "finance docs",
+  ])
+) {
+  return { type: "filterCategory", value: "finance" };
+}
 
   if (
-    matchesCommand(command, [
-      "work folder",
-      "work documents",
-      "work files",
-      "open work",
-      "show work",
-    ])
-  ) {
-    return { type: "filterCategory", value: "work" };
-  }
+  !hasOrdinalReference(command) &&
+  matchesCommand(command, [
+    "work folder",
+    "work documents",
+    "work files",
+    "open work",
+    "show work",
+  ])
+) {
+  return { type: "filterCategory", value: "work" };
+}
 
   if (
-    matchesCommand(command, [
-      "study folder",
-      "study documents",
-      "study files",
-      "open study",
-      "show study",
-    ])
-  ) {
-    return { type: "filterCategory", value: "study" };
-  }
+  !hasOrdinalReference(command) &&
+  matchesCommand(command, [
+    "study folder",
+    "study documents",
+    "study files",
+    "open study",
+    "show study",
+  ])
+) {
+  return { type: "filterCategory", value: "study" };
+}
 
   if (
-    matchesCommand(command, [
-      "personal folder",
-      "personal documents",
-      "personal files",
-      "open personal",
-      "show personal",
-    ])
-  ) {
-    return { type: "filterCategory", value: "personal" };
-  }
+  !hasOrdinalReference(command) &&
+  matchesCommand(command, [
+    "personal folder",
+    "personal documents",
+    "personal files",
+    "open personal",
+    "show personal",
+  ])
+) {
+  return { type: "filterCategory", value: "personal" };
+}
 
   if (
-    matchesCommand(command, [
-      "legal folder",
-      "legal documents",
-      "legal files",
-      "open legal",
-      "show legal",
-    ])
-  ) {
-    return { type: "filterCategory", value: "legal" };
-  }
+  !hasOrdinalReference(command) &&
+  matchesCommand(command, [
+    "legal folder",
+    "legal documents",
+    "legal files",
+    "open legal",
+    "show legal",
+  ])
+) {
+  return { type: "filterCategory", value: "legal" };
+}
+
+ if (
+  !hasOrdinalReference(command) &&
+  matchesCommand(command, [
+    "history folder",
+    "history documents",
+    "history files",
+    "open history",
+    "show history",
+  ])
+) {
+  return { type: "filterCategory", value: "history" };
+}
 
   if (
-    matchesCommand(command, [
-      "history folder",
-      "history documents",
-      "history files",
-      "open history",
-      "show history",
-    ])
-  ) {
-    return { type: "filterCategory", value: "history" };
-  }
-
-  if (
-    matchesCommand(command, [
-      "other folder",
-      "other documents",
-      "other files",
-      "open other",
-      "show other",
-      "uncategorised",
-      "uncategorized",
-    ])
-  ) {
-    return { type: "filterCategory", value: "other" };
-  }
+  !hasOrdinalReference(command) &&
+  matchesCommand(command, [
+    "other folder",
+    "other documents",
+    "other files",
+    "open other",
+    "show other",
+    "uncategorised",
+    "uncategorized",
+  ])
+) {
+  return { type: "filterCategory", value: "other" };
+}
 
     if (
     matchesCommand(command, [
