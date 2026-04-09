@@ -110,14 +110,14 @@ const splitVoiceCommands = (text) => {
 
 const buildAssistantStatusText = (actions = []) => {
   if (!Array.isArray(actions) || actions.length === 0) {
-    return "Executing command...";
+    return "Understanding your request...";
   }
 
   const labels = actions.map((action) => {
     if (action.type === "openRecent") return "Opening recent document";
-    if (action.type === "openDocuments") return "Opening documents"; 
-    if (action.type === "openHome") return "Opening Home";
-    if (action.type === "openLibrary") return "Opening Library"; 
+    if (action.type === "openDocuments") return "Opening documents";
+    if (action.type === "openHome") return "Opening home";
+    if (action.type === "openLibrary") return "Opening library";
     if (action.type === "openProfile") return "Opening profile";
     if (action.type === "playLatestSummary") return "Opening latest saved summary";
     if (action.type === "openFirstSavedSummary") return "Opening first saved summary";
@@ -890,18 +890,18 @@ if (action.type === "listenSavedSummary") {
   <Text style={{ fontSize: 32, fontWeight: "900", color: "#0F172A" }}>
     Voice Assistant
   </Text>
-  <Text
-    style={{
-      marginTop: 8,
-      fontSize: 14,
-      color: "#64748B",
-      textAlign: "center",
-      lineHeight: 20,
-      maxWidth: 280,
-    }}
-  >
-    Open documents, summaries, folders, and saved items through the Voice Assistant
-  </Text>
+ <Text
+  style={{
+    marginTop: 8,
+    fontSize: 14,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 20,
+    maxWidth: 300,
+  }}
+>
+  Find documents, trigger summaries, and listen to content using the Voice Assistant
+</Text>
 </View>
 
       <TouchableOpacity
@@ -1003,26 +1003,27 @@ if (action.type === "listenSavedSummary") {
   )}
 
   {isIdle && !transcript && (
-    <View
-      style={{
-        marginTop: 6,
-        backgroundColor: "#F8FAFC",
-        borderRadius: 16,
-        padding: 14,
-        borderWidth: 1,
-        borderColor: "#E2E8F0",
-      }}
-    >
-      <Text style={{ fontSize: 12, fontWeight: "800", color: "#64748B", marginBottom: 8 }}>
-        TRY SAYING
-      </Text>
-      <Text style={{ fontSize: 14, color: "#0F172A", lineHeight: 22 }}>
-        “Open recent document”{"\n"}
-        “Play latest summary”{"\n"}
-        “Open work folder”{"\n"}
-      </Text>
-    </View>
-  )}
+  <View
+    style={{
+      marginTop: 6,
+      backgroundColor: "#F8FAFC",
+      borderRadius: 16,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: "#E2E8F0",
+    }}
+  >
+    <Text style={{ fontSize: 12, fontWeight: "800", color: "#64748B", marginBottom: 8 }}>
+      TRY SAYING
+    </Text>
+    <Text style={{ fontSize: 14, color: "#0F172A", lineHeight: 22 }}>
+      “Open my essay and summarise it”{"\n"}
+      “Play the latest saved summary”{"\n"}
+      “Open the first file in study folder”{"\n"}
+      “Read out my document”{"\n"}
+    </Text>
+  </View>
+)}
 </View>
 
     </View>
