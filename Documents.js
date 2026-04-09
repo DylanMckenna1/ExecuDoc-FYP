@@ -202,12 +202,13 @@ const onAutoTag = async (doc, options = {}) => {
 };
 
   // Viewer state
-  const [viewerVisible, setViewerVisible] = useState(false);
-  const [viewerUri, setViewerUri] = useState(null);
-  const [viewerTitle, setViewerTitle] = useState('');
-  const [viewerLoading, setViewerLoading] = useState(false);
-  const [viewerType, setViewerType] = useState('pdf');
-  const [kwValue, setKwValue] = useState("");
+const [viewerVisible, setViewerVisible] = useState(false);
+const [viewerUri, setViewerUri] = useState(null);
+const [viewerTitle, setViewerTitle] = useState('');
+const [viewerLoading, setViewerLoading] = useState(false);
+const [viewerType, setViewerType] = useState('pdf');
+const [viewerText, setViewerText] = useState('');
+const [kwValue, setKwValue] = useState("");
 
   const openSummaryPicker = (doc) => {
   setSummaryPickerDoc(doc);
@@ -420,44 +421,30 @@ useEffect(() => {
     let workingDoc = null;
 
     if (autoFolderDocCategory && autoFolderDocIndex !== null) {
-      const folderDocs = files.filter(
-        (doc) =>
-          (doc?.category || "").toLowerCase().trim() ===
-          autoFolderDocCategory.toLowerCase().trim()
-      );
+  const folderDocs = files.filter(
+    (doc) =>
+      (doc?.category || "").toLowerCase().trim() ===
+      autoFolderDocCategory.toLowerCase().trim()
+  );
 
-      workingDoc = folderDocs[autoFolderDocIndex] || null;
+  workingDoc = folderDocs[autoFolderDocIndex] || null;
 
-      if (!workingDoc) {
-        Alert.alert("Voice command failed", "I couldn’t find that file in the folder.");
-        return;
-      }
-    } else if (autoSuggestedMatchIndex !== null) {
+  if (!workingDoc) {
+    Alert.alert("Voice command failed", "I couldn’t find that file in the folder.");
+    return;
+  }
+} else if (autoSuggestedMatchIndex !== null) {
+  workingDoc = lastSuggestedVoiceDocs?.[autoSuggestedMatchIndex] || null;
 
-    const folderDocs = files.filter(
-      (doc) =>
-        (doc?.category || "").toLowerCase().trim() ===
-        autoFolderDocCategory.toLowerCase().trim()
+  if (!workingDoc) {
+    Alert.alert(
+      "Voice command failed",
+      "I couldn’t find that suggested match anymore."
     );
+    return;
+  }
+} else if (autoUseLastVoiceDoc && lastVoiceDoc) {
 
-    workingDoc = folderDocs[autoFolderDocIndex] || null;
-
-    if (!workingDoc) {
-      Alert.alert("Voice command failed", "I couldn’t find that file in the folder.");
-      return;
-    }
-  } else if (autoSuggestedMatchIndex !== null) {
-    workingDoc = lastSuggestedVoiceDocs?.[autoSuggestedMatchIndex] || null;
-
-    if (!workingDoc) {
-      Alert.alert(
-        "Voice command failed",
-        "I couldn’t find that suggested match anymore."
-      );
-      return;
-    }
-  } else if (autoUseLastVoiceDoc && lastVoiceDoc) {
-    workingDoc = lastVoiceDoc;
   } else {
     const ranked = getRankedVoiceTargetDocs({
       files,
@@ -731,21 +718,61 @@ const closeUploadModal = () => {
 };
 
   /* ─ open file ─ */
+ const onOpen = async (doc) => {
+  try {
+    const type = deriveType(doc);
+    const title = doc.title || 'File';
+    const mime = (doc.mimeType || '').toLowerCase();
+    const lowerTitle = title.toLowerCase();
 
-  const onOpen = async (doc) => {
-    // builds file url
-    try {
-      const type = deriveType(doc);
-      const url = getFileDownloadUrl(doc.fileId);
-      if (!url) throw new Error('Invalid file URL.');
+    const isDocxFile =
+    mime.includes('wordprocessingml') ||
+    lowerTitle.endsWith('.docx');
 
-      setViewerTitle(doc.title || 'File');
-      setViewerVisible(true);
-      setViewerLoading(true);
+    const isLegacyWordDoc =
+    mime === 'application/msword' ||
+    lowerTitle.endsWith('.doc');
 
-      if (type === 'pdf') setViewerType('pdf');
-      else if (type === 'image') setViewerType('image');
-      else setViewerType('doc');
+    setViewerTitle(title);
+    setViewerVisible(true);
+    setViewerLoading(true);
+    setViewerUri(null);
+    setViewerText("");
+
+   if (isLegacyWordDoc) {
+  throw new Error(
+    "Legacy .doc files are not supported for in-app viewing. Please use PDF or DOCX for the best experience."
+  );
+}
+
+if (isDocxFile) {
+  let text = (doc.textContent || "").trim();
+
+  if (!text) {
+    const result = await callExtractTextFunction(doc);
+    text = (
+      result?.textContent ||
+      result?.extractedText ||
+      result?.text ||
+      ""
+    ).trim();
+  }
+
+  if (!text) {
+    throw new Error("This DOCX file could not be opened as readable text.");
+  }
+
+  setViewerType("text");
+  setViewerText(text);
+  return;
+}
+
+    const url = getFileDownloadUrl(doc.fileId);
+    if (!url) throw new Error('Invalid file URL.');
+
+    if (type === 'pdf') setViewerType('pdf');
+    else if (type === 'image') setViewerType('image');
+    else setViewerType('doc');
 
       const resp = await fetch(url, {
         headers: {
@@ -762,7 +789,6 @@ const closeUploadModal = () => {
       const base64 = Buffer.from(arrayBuffer).toString('base64');
 
       const name = (doc.title || '').toLowerCase();
-      const mime = (doc.mimeType || '').toLowerCase();
 
       let ext = '';
       if (mime.includes('pdf') || name.endsWith('.pdf')) ext = '.pdf';
@@ -806,78 +832,17 @@ if (!isDetailed) {
  
   const existingShort = (doc.summary || "").trim();
       if (existingShort) {
-      Alert.alert("AI Summary (Short)", existingShort, [
-  {
-    text: "Listen",
-    onPress: () => {
-  setTtsText(existingShort);
-  setTtsContext({ docId: doc.$id, mode: "summary", variant: "short" });
-  setTtsVisible(true);
-},
-  },
-  {
-    text: "Save to Library",
-    onPress: async () => {
-      try {
-       await saveToLibrary({
-  userId,
-  docId: doc.$id,
-  title: doc.title,
-  summaryType: "short",
-  summaryText: existingShort,
-  audioFileId: "",
-  category: doc.category || "",
-keywords: doc.keywords || "",
-});
-        Alert.alert("Saved", "Short summary saved to your Library.");
-      } catch (e) {
-        Alert.alert("Save failed", e?.message || "Could not save summary.");
-      }
-    },
-  },
-  { text: "OK", style: "default" },
-]);
-
+      openSummaryResult(doc, existingShort, "short");
         return;
       }
     }
 
     // Detailed mode
-if (isDetailed) {
+  if (isDetailed) {
   const existingDetailed = (cache.summaryDetailedText || "").trim();
   if (existingDetailed) {
-    Alert.alert("AI Summary (Detailed)", existingDetailed, [
-      {
-        text: "Listen",
-        onPress: () => {
-          setTtsText(existingDetailed);
-          setTtsContext({ docId: doc.$id, mode: "summary", variant: "detailed" });
-          setTtsVisible(true);
-        },
-      },
-      {
-        text: "Save to Library",
-        onPress: async () => {
-          try {
-            await saveToLibrary({
-              userId,
-              docId: doc.$id,
-              title: doc.title,
-              summaryType: "detailed",
-              summaryText: existingDetailed,
-              audioFileId: "",
-              category: doc.category || "",
-              keywords: doc.keywords || "",
-            });
-            Alert.alert("Saved", "Detailed summary saved to your Library.");
-          } catch (e) {
-            Alert.alert("Save failed", e?.message || "Could not save summary.");
-          }
-        },
-      },
-      { text: "OK", style: "default" },
-    ]);
-    return;
+      openSummaryResult(doc, existingDetailed, "detailed");
+      return;
   }
 }
 
@@ -907,42 +872,20 @@ if (!isDetailed) {
       } catch {}
     
       await updateDocFields(doc.$id, { summary: newSummary });
-
-      Alert.alert("AI Summary (Short)", newSummary, [
-        {
-          text: "Listen",
-          onPress: () => {
-            setTtsText(newSummary);
-            setTtsContext({ docId: doc.$id, mode: "summary", variant: "short" });
-            setTtsVisible(true);
-          },
-        },
-        { text: "OK", style: "default" },
-      ]);
+         openSummaryResult(doc, newSummary, "short");
     } else {
-      // Save detailed summary into ttsSummaryParts 
-      const nextCacheJson = makeTtsCache({
-        bucketId: cache.bucketId || TTS_BUCKET_ID,
-        docParts: cache.docParts,
-        summaryParts: cache.summaryParts,
-        summaryDetailedParts: [], // reset for new detailed sum
-        summaryDetailedText: newSummary,
-      });
+  // Save detailed summary into ttsSummaryParts 
+  const nextCacheJson = makeTtsCache({
+    bucketId: cache.bucketId || TTS_BUCKET_ID,
+    docParts: cache.docParts,
+    summaryParts: cache.summaryParts,
+    summaryDetailedParts: [], // reset for new detailed sum
+    summaryDetailedText: newSummary,
+  });
 
-      await updateTtsCacheField(doc.$id, nextCacheJson);
-
-      Alert.alert("AI Summary (Detailed)", newSummary, [
-        {
-          text: "Listen",
-          onPress: () => {
-            setTtsText(newSummary);
-            setTtsContext({ docId: doc.$id, mode: "summary", variant: "detailed" });
-            setTtsVisible(true); 
-          },
-        },
-        { text: "OK", style: "default" },
-      ]);
-    }
+  await updateTtsCacheField(doc.$id, nextCacheJson);
+  openSummaryResult(doc, newSummary, "detailed");
+}
 
     await load();
   } catch (e) {
@@ -1061,16 +1004,24 @@ const resolveVoiceTargetDoc = ({
   return null;
 };
 
-const openVoiceSummaryResult = (doc, summaryText, summaryType = "short") => {
+const openSummaryResult = (doc, summaryText, summaryType = "short") => {
   const cleanSummary = (summaryText || "").trim();
   if (!cleanSummary) return;
 
-  Alert.alert("AI Summary (Short)", cleanSummary, [
+  const isDetailed = summaryType === "detailed";
+  const alertTitle = isDetailed ? "AI Summary (Detailed)" : "AI Summary (Short)";
+  const ttsVariant = isDetailed ? "detailed" : "short";
+
+  Alert.alert(alertTitle, cleanSummary, [
     {
       text: "Listen",
       onPress: () => {
         setTtsText(cleanSummary);
-        setTtsContext({ docId: doc.$id, mode: "summary", variant: "short" });
+        setTtsContext({
+          docId: doc.$id,
+          mode: "summary",
+          variant: ttsVariant,
+        });
         setTtsVisible(true);
       },
     },
@@ -1079,7 +1030,7 @@ const openVoiceSummaryResult = (doc, summaryText, summaryType = "short") => {
       onPress: async () => {
         try {
           await saveSummaryToLibraryDirect(doc, cleanSummary, summaryType);
-          Alert.alert("Saved", "Summary saved to your Library.");
+          Alert.alert("Saved", `${isDetailed ? "Detailed" : "Short"} summary saved to your Library.`);
         } catch (e) {
           Alert.alert("Save failed", e?.message || "Could not save summary.");
         }
@@ -1087,6 +1038,10 @@ const openVoiceSummaryResult = (doc, summaryText, summaryType = "short") => {
     },
     { text: "OK", style: "default" },
   ]);
+};
+
+const openVoiceSummaryResult = (doc, summaryText, summaryType = "short") => {
+  openSummaryResult(doc, summaryText, summaryType);
 };
 
 const saveSummaryToLibraryDirect = async (doc, summaryText, summaryType = "short") => {
@@ -2379,9 +2334,10 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
         visible={viewerVisible}
         animationType="slide"
         onRequestClose={() => {
-          setViewerVisible(false);
-          setViewerUri(null);
-        }}
+         setViewerVisible(false);
+         setViewerUri(null);
+         setViewerText('');
+       }}
       >
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
           <View
@@ -2398,10 +2354,11 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
             }}
           >
             <TouchableOpacity
-              onPress={() => {
-                setViewerVisible(false);
-                setViewerUri(null);
-              }}
+             onPress={() => {
+              setViewerVisible(false);
+              setViewerUri(null);
+              setViewerText('');
+            }}
               style={{ padding: 8 }}
             >
               <Text style={{ color: brand, fontWeight: '800' }}>Close</Text>
@@ -2419,35 +2376,45 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
               <ActivityIndicator size="large" />
               <Text style={{ marginTop: 10, color: '#6B7280' }}>Loading…</Text>
             </View>
-          ) : viewerUri ? (
-            viewerType === 'pdf' ? (
-              <Pdf
-                source={{ uri: viewerUri }}
-                style={{ flex: 1, width: '100%' }}
-                onError={(err) => {
-                  console.log('pdf render error', err);
-                  Alert.alert('PDF error', 'Could not render this PDF.');
-                }}
-              />
-            ) : viewerType === 'image' ? (
-              <View style={{ flex: 1, padding: 12 }}>
-                <Image
-                  source={{ uri: viewerUri }}
-                  style={{ flex: 1, width: '100%', borderRadius: 10 }}
-                  resizeMode="contain"
-                />
-              </View>
-            ) : (
-              <WebView
-                source={{ uri: viewerUri }}
-                style={{ flex: 1 }}
-                originWhitelist={['*']}
-                allowFileAccess
-                allowingReadAccessToURL={FileSystem.cacheDirectory}
-              />
-            )
-          ) : (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+         ) : viewerType === 'text' ? (
+  <ScrollView
+    style={{ flex: 1, padding: 16 }}
+    contentContainerStyle={{ paddingBottom: 24 }}
+  >
+    <Text style={{ color: '#0F172A', fontSize: 15, lineHeight: 24 }}>
+      {viewerText}
+    </Text>
+  </ScrollView>
+) : viewerUri ? (
+  viewerType === 'pdf' ? (
+    <Pdf
+      source={{ uri: viewerUri }}
+      style={{ flex: 1, width: '100%' }}
+      onError={(err) => {
+        console.log('pdf render error', err);
+        Alert.alert('PDF error', 'Could not render this PDF.');
+      }}
+    />
+  ) : viewerType === 'image' ? (
+    <View style={{ flex: 1, padding: 12 }}>
+      <Image
+        source={{ uri: viewerUri }}
+        style={{ flex: 1, width: '100%', borderRadius: 10 }}
+        resizeMode="contain"
+      />
+    </View>
+  ) : (
+    <WebView
+      source={{ uri: viewerUri }}
+      style={{ flex: 1 }}
+      originWhitelist={['*']}
+      allowFileAccess
+      allowingReadAccessToURL={FileSystem.cacheDirectory}
+    />
+  )
+) : (
+              
+     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: '#6B7280' }}>No file loaded.</Text>
             </View>
           )}
