@@ -301,19 +301,28 @@ const getCommandAction = (text) => {
   return { type: "openProfile" };
 }
  
-  if (
-    matchesCommand(command, [
-      "play latest summary",
-      "play newest summary",
-      "play recent summary",
-      "open latest summary",
-      "open recent summary",
-      "play my latest summary",
-      "play my recent summary",
-    ])
-  ) {
-    return { type: "playLatestSummary" };
-  }
+ if (
+  matchesCommand(command, [
+    "play latest summary",
+    "play newest summary",
+    "play recent summary",
+    "open latest summary",
+    "open recent summary",
+    "play my latest summary",
+    "play my recent summary",
+    "play the latest summary",
+    "play the latest saved summary",
+    "play latest saved summary",
+    "open the latest summary",
+    "open the latest saved summary",
+    "open latest saved summary",
+    "listen to the latest summary",
+    "listen to the latest saved summary",
+    "listen to latest saved summary",
+  ])
+) {
+  return { type: "playLatestSummary" };
+}
 
   if (
   matchesCommand(command, [
@@ -507,7 +516,8 @@ if (
     command.match(/^play .+ saved summary$/) ||
     command.match(/^play .+ summary$/) ||
     command.match(/^play .+ summary in library$/)) &&
-  targetText
+  targetText &&
+  !/\b(latest|newest|recent)\b/.test(targetText)
 ) {
   return { type: "savedSummaryTarget", value: targetText, play: true };
 }
