@@ -479,7 +479,7 @@ useEffect(() => {
 
       const bestScore = ranked[0]?.score || 0;
 
-      if ((autoTargetText || autoSearchText) && bestScore < 35) {
+      if ((autoTargetText || autoSearchText) && bestScore < 30) {
         Alert.alert("Voice command failed", "No matching document found.");
         return;
       }
@@ -909,7 +909,41 @@ const getRankedVoiceTargetDocs = ({
       ? value.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim()
       : "";
 
+const stemVoiceWord = (word) => {
+  if (!word || word.length <= 4) return word;
+
+  if (word.endsWith("ies")) {
+    return word.slice(0, -3) + "y";
+  }
+
+  if (word.endsWith("es") && word.length > 5) {
+    return word.slice(0, -2);
+  }
+
+  if (word.endsWith("s") && word.length > 4) {
+    return word.slice(0, -1);
+  }
+
+  return word;
+};
+
+const simplifyVoiceMatchText = (value) => {
+  const text = normalise(value);
+
+  if (!text) return "";
+
+  return text
+    .replace(/\b(my|the|a|an|document|file|summary)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map(stemVoiceWord)
+    .join(" ");
+};
+
   const targetText = normalise(autoTargetText || autoSearchText);
+  const simplifiedTargetText = simplifyVoiceMatchText(autoTargetText || autoSearchText);
   const filterCategory = normalise(autoFilterCategory);
 
   let candidates = [...files];
@@ -926,6 +960,7 @@ const getRankedVoiceTargetDocs = ({
 
   const scoreDoc = (doc) => {
   const title = normalise(doc?.title);
+  const simplifiedTitle = simplifyVoiceMatchText(doc?.title);
   const keywords = normalise(doc?.keywords);
   const summary = normalise(doc?.summary);
   const textContent = normalise(doc?.textContent);
@@ -933,26 +968,50 @@ const getRankedVoiceTargetDocs = ({
 
   let score = 0;
 
+  if (!targetText && !simplifiedTargetText) return score;
+
   // exact title match
   if (title === targetText) score += 120;
+  if (simplifiedTargetText && simplifiedTitle === simplifiedTargetText) score += 110;
 
   // strong title match
-  if (title.includes(targetText)) score += 80;
+  if (targetText && title.includes(targetText)) score += 80;
+  if (simplifiedTargetText && simplifiedTitle.includes(simplifiedTargetText)) score += 75;
 
-  // all words in title
-  if (targetText.split(" ").every((w) => title.includes(w))) score += 60;
+  // query fully covered by title words
+  if (targetText && targetText.split(" ").every((w) => title.includes(w))) score += 60;
+  if (
+    simplifiedTargetText &&
+    simplifiedTargetText.split(" ").every((w) => simplifiedTitle.includes(w))
+  ) {
+    score += 55;
+  }
+  
+  // partial overlap on title words
+  const targetWords = (simplifiedTargetText || targetText).split(" ").filter(Boolean);
+  const titleWords = simplifiedTitle.split(" ").filter(Boolean);
+  const matchedWords = targetWords.filter((word) => titleWords.includes(word)).length;
+
+  if (matchedWords >= 1) score += 15;
+  if (matchedWords >= 2) score += 30;
+  if (targetWords.length > 0 && matchedWords === targetWords.length) score += 25;
 
   // category match
-  if (category && targetText.includes(category)) score += 50;
+  if (category && (targetText.includes(category) || simplifiedTargetText.includes(category))) {
+    score += 50;
+  }
 
   // keywords
-  if (keywords.includes(targetText)) score += 40;
+  if (targetText && keywords.includes(targetText)) score += 40;
+  if (simplifiedTargetText && keywords.includes(simplifiedTargetText)) score += 35;
 
   // summary
-  if (summary.includes(targetText)) score += 20;
+  if (targetText && summary.includes(targetText)) score += 20;
+  if (simplifiedTargetText && summary.includes(simplifiedTargetText)) score += 15;
 
   // fallback 
-  if (score === 0 && textContent.includes(targetText)) score += 10;
+  if (score === 0 && targetText && textContent.includes(targetText)) score += 10;
+  if (score === 0 && simplifiedTargetText && textContent.includes(simplifiedTargetText)) score += 10;
 
   return score;
 };

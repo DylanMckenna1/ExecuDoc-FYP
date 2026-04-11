@@ -560,6 +560,14 @@ if (
     return { type: "summaryTarget", value: targetText, listen: true };
   }
   
+  if (command.startsWith("play summary of ") && targetText) {
+  return { type: "summaryTarget", value: targetText, listen: true };
+  }
+
+  if (command.startsWith("play the summary of ") && targetText) {
+  return { type: "summaryTarget", value: targetText, listen: true };
+  }
+
   if (
     command.startsWith("save summary of ") &&
     targetText
@@ -660,7 +668,33 @@ const getStatusLabel = () => {
 //calling get command action text 
 const handleVoiceCommand = (text) => {
   const parts = splitVoiceCommands(text);
-  const actions = parts.map(getCommandAction).filter(Boolean);
+  const rawActions = parts.map(getCommandAction).filter(Boolean);
+
+let inheritedTargetText = "";
+const actions = rawActions.map((action) => {
+  if (!action) return action;
+
+  if (typeof action.value === "string" && action.value.trim()) {
+    inheritedTargetText = action.value.trim();
+    return action;
+  }
+
+  if (
+    inheritedTargetText &&
+    (
+      action.type === "summariseRecent" ||
+      action.type === "listenRecent" ||
+      action.type === "saveRecentSummary"
+    )
+  ) {
+    return {
+      ...action,
+      inheritedTargetText,
+    };
+  }
+
+  return action;
+});
 
   if (!actions.length) {
     setTranscript(text || "");
@@ -848,28 +882,41 @@ if (action.type === "listenSavedSummary") {
     }
 
      if (action.type === "summariseRecent") {
-      targetScreen = "Documents";
-      documentsParams.autoSummariseRecent = true;
-      if (action.useLastVoiceDoc) {
-        documentsParams.autoUseLastVoiceDoc = true;
-      }
-    }
+  targetScreen = "Documents";
+  documentsParams.autoSummariseRecent = true;
 
-    if (action.type === "listenRecent") {
-      targetScreen = "Documents";
-      documentsParams.autoListenRecent = true;
-      if (action.useLastVoiceDoc) {
-        documentsParams.autoUseLastVoiceDoc = true;
-      }
-    }
+  if (action.inheritedTargetText) {
+    documentsParams.autoTargetText = action.inheritedTargetText;
+    documentsParams.autoSearchText = action.inheritedTargetText;
+  } else if (action.useLastVoiceDoc) {
+    documentsParams.autoUseLastVoiceDoc = true;
+  }
+}
 
-    if (action.type === "saveRecentSummary") {
-      targetScreen = "Documents";
-      documentsParams.autoSaveRecentSummary = true;
-      if (action.useLastVoiceDoc) {
-        documentsParams.autoUseLastVoiceDoc = true;
-      }
-    }
+if (action.type === "listenRecent") {
+  targetScreen = "Documents";
+  documentsParams.autoListenRecent = true;
+
+  if (action.inheritedTargetText) {
+    documentsParams.autoTargetText = action.inheritedTargetText;
+    documentsParams.autoSearchText = action.inheritedTargetText;
+  } else if (action.useLastVoiceDoc) {
+    documentsParams.autoUseLastVoiceDoc = true;
+  }
+}
+
+if (action.type === "saveRecentSummary") {
+  targetScreen = "Documents";
+  documentsParams.autoSaveRecentSummary = true;
+
+  if (action.inheritedTargetText) {
+    documentsParams.autoTargetText = action.inheritedTargetText;
+    documentsParams.autoSearchText = action.inheritedTargetText;
+  } else if (action.useLastVoiceDoc) {
+    documentsParams.autoUseLastVoiceDoc = true;
+  }
+}
+
   });
 
   if (targetScreen === "Documents") {
