@@ -124,14 +124,22 @@ const buildAssistantStatusText = (actions = []) => {
     if (action.type === "filterCategory") {
       return `Opening ${action.value} folder`;
     }
-    if (action.type === "targetDocument") {
-      if (action.open && action.listen) return `Opening and listening to ${action.value}`;
-      if (action.open && action.summarise) return `Opening and summarising ${action.value}`;
-      if (action.listen) return `Listening to ${action.value}`;
-      if (action.summarise) return `Summarising ${action.value}`;
-      return `Finding ${action.value}`;
-    }
-    if (action.type === "summaryTarget") {
+   if (action.type === "targetDocument") {
+  if (action.open && action.listen) return `Opening and listening to ${action.value}`;
+  if (action.open && action.summarise) {
+    return action.summaryMode === "detailed"
+      ? `Opening and creating a detailed summary of ${action.value}`
+      : `Opening and summarising ${action.value}`;
+  }
+  if (action.listen) return `Listening to ${action.value}`;
+  if (action.summarise) {
+    return action.summaryMode === "detailed"
+      ? `Creating a detailed summary of ${action.value}`
+      : `Summarising ${action.value}`;
+  }
+  return `Finding ${action.value}`;
+}
+ if (action.type === "summaryTarget") {
       if (action.open) return `Opening summary of ${action.value}`;
       if (action.listen) return `Listening to summary of ${action.value}`;
       if (action.save) return `Saving summary of ${action.value} to Library`;
@@ -143,7 +151,11 @@ const buildAssistantStatusText = (actions = []) => {
     if (action.listen) return `Playing saved summary of ${action.value}`;
      return `Finding saved summary of ${action.value}`;
   }
-    if (action.type === "summariseRecent") return "Summarising document";
+    if (action.type === "summariseRecent") {
+     return action.summaryMode === "detailed"
+    ? "Creating detailed summary"
+    : "Summarising document";
+   }
     if (action.type === "listenRecent") return "Listening to document";
     if (action.type === "saveRecentSummary") return "Saving summary to Library";
     if (action.type === "searchDocuments") return `Searching for ${action.value}`;
@@ -223,6 +235,25 @@ const getOrdinalIndex = (command) => {
 
 const hasOrdinalReference = (command) => {
   return getOrdinalIndex(command) !== null;
+};
+
+const wantsDetailedSummary = (command) => {
+  const text = normaliseVoiceText(command);
+
+  return (
+    text.includes("detailed summary") ||
+    text.includes("summary in detail") ||
+    text.includes("summarise in detail") ||
+    text.includes("summarize in detail") ||
+    text.includes("summarise it in detail") ||
+    text.includes("summarize it in detail") ||
+    text.includes("summarise this in detail") ||
+    text.includes("summarize this in detail") ||
+    text.includes("give me a detailed summary") ||
+    text.includes("detailed mode") ||
+    text.includes("in detailed mode") ||
+    /\bin detail\b/.test(text)
+  );
 };
 
 const getCommandAction = (text) => {
@@ -441,20 +472,24 @@ if (
   return { type: "filterCategory", value: "other" };
 }
 
-    if (
-    matchesCommand(command, [
-      "summarise it",
-      "summarise this",
-      "summarise document",
-      "summarise this document",
-      "summarize it",
-      "summarize this",
-      "summarize document",
-      "summarize this document",
-    ])
-  ) {
-    return { type: "summariseRecent", useLastVoiceDoc: refersToLastDoc };
-  }
+   if (
+  matchesCommand(command, [
+    "summarise it",
+    "summarise this",
+    "summarise document",
+    "summarise this document",
+    "summarize it",
+    "summarize this",
+    "summarize document",
+    "summarize this document",
+  ])
+) {
+  return {
+    type: "summariseRecent",
+    useLastVoiceDoc: refersToLastDoc,
+    summaryMode: wantsDetailedSummary(command) ? "detailed" : "short",
+  };
+}
 
   if (
     matchesCommand(command, [
@@ -469,23 +504,30 @@ if (
     return { type: "listenRecent", useLastVoiceDoc: refersToLastDoc };
   }
 
-    if (
-    matchesCommand(command, [
-      "save it to the library",
-      "save this to the library",
-      "save summary to the library",
-      "save the summary to the library",
-      "save the summary to library",
-      "save summary to library",
-      "save it",
-      "save this summary",
-      "save to library",
-      "add it to the library",
-      "add this to the library",
-    ])
-  ) {
-    return { type: "saveRecentSummary", useLastVoiceDoc: refersToLastDoc };
-  }
+  if (
+  matchesCommand(command, [
+    "save it to the library",
+    "save this to the library",
+    "save summary to the library",
+    "save the summary to the library",
+    "save the summary to library",
+    "save summary to library",
+    "save the recent summary to the library",
+    "save recent summary to the library",
+    "save the latest summary to the library",
+    "save latest summary to the library",
+    "save it",
+    "save this summary",
+    "save to library",
+    "add it to the library",
+    "add this to the library",
+  ])
+) {
+  return {
+    type: "saveRecentSummary",
+    useLastVoiceDoc: refersToLastDoc,
+  };
+}
 
      if (
   (command.startsWith("open saved summary of ") ||
@@ -645,8 +687,26 @@ if (
   }
 
   if ((command.startsWith("summarise ") || command.startsWith("summarize ")) && targetText) {
-    return { type: "targetDocument", value: targetText, summarise: true };
+    return {
+     type: "targetDocument",
+     value: targetText,
+     summarise: true,
+     summaryMode: wantsDetailedSummary(command) ? "detailed" : "short",
+   };
   }
+
+  if (
+  (command.startsWith("give me a detailed summary of ") ||
+    command.startsWith("give me the detailed summary of ")) &&
+  targetText
+) {
+  return {
+    type: "targetDocument",
+    value: targetText,
+    summarise: true,
+    summaryMode: "detailed",
+  };
+}
 
   return null;
 };
@@ -725,6 +785,7 @@ const documentsParams = {
   autoSummariseRecent: false,
   autoListenRecent: false,
   autoSaveRecentSummary: false,
+  autoSummaryMode: "short",
   commandNonce: Date.now(),
 };
 
@@ -815,22 +876,23 @@ if (action.type === "listenSavedSummary") {
     }
 
     if (action.type === "targetDocument") {
-      targetScreen = "Documents";
-      documentsParams.autoTargetText = action.value;
-      documentsParams.autoSearchText = action.value;
+  targetScreen = "Documents";
+  documentsParams.autoTargetText = action.value;
+  documentsParams.autoSearchText = action.value;
 
-      if (action.open) {
-        documentsParams.autoOpenRecent = true;
-      }
+  if (action.open) {
+    documentsParams.autoOpenRecent = true;
+  }
 
-      if (action.summarise) {
-        documentsParams.autoSummariseRecent = true;
-      }
+  if (action.summarise) {
+    documentsParams.autoSummariseRecent = true;
+    documentsParams.autoSummaryMode = action.summaryMode || "short";
+  }
 
-      if (action.listen) {
-        documentsParams.autoListenRecent = true;
-      }
-    }
+  if (action.listen) {
+    documentsParams.autoListenRecent = true;
+  }
+ } 
 
       if (action.type === "summaryTarget") {
       targetScreen = "Documents";
@@ -884,6 +946,7 @@ if (action.type === "listenSavedSummary") {
      if (action.type === "summariseRecent") {
   targetScreen = "Documents";
   documentsParams.autoSummariseRecent = true;
+  documentsParams.autoSummaryMode = action.summaryMode || "short";
 
   if (action.inheritedTargetText) {
     documentsParams.autoTargetText = action.inheritedTargetText;
@@ -1074,11 +1137,11 @@ if (action.type === "saveRecentSummary") {
       TRY SAYING
     </Text>
     <Text style={{ fontSize: 14, color: "#0F172A", lineHeight: 22 }}>
-      “Open my essay and summarise it”{"\n"}
-      “Play the latest saved summary”{"\n"}
-      “Open the first file in study folder”{"\n"}
-      “Read out my document”{"\n"}
-    </Text>
+  “Open my essay and summarise it”{"\n"}
+  “Give me a detailed summary of my essay”{"\n"}
+  “Play the latest saved summary”{"\n"}
+  “Open the first file in study folder”{"\n"}
+</Text>
   </View>
 )}
 </View>

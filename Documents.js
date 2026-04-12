@@ -394,13 +394,14 @@ useEffect(() => {
     typeof route?.params?.autoFolderDocIndex === "number"
       ? route.params.autoFolderDocIndex
       : null;
-  const autoOpenSummaryTarget = route?.params?.autoOpenSummaryTarget === true;
-  const autoListenSummaryTarget = route?.params?.autoListenSummaryTarget === true;
-  const autoSaveSummaryTarget = route?.params?.autoSaveSummaryTarget === true;
-  const autoSummariseRecent = route?.params?.autoSummariseRecent === true;
-  const autoListenRecent = route?.params?.autoListenRecent === true;
-  const autoSaveRecentSummary = route?.params?.autoSaveRecentSummary === true;
-  const commandNonce = route?.params?.commandNonce;
+ const autoOpenSummaryTarget = route?.params?.autoOpenSummaryTarget === true;
+ const autoListenSummaryTarget = route?.params?.autoListenSummaryTarget === true;
+ const autoSaveSummaryTarget = route?.params?.autoSaveSummaryTarget === true;
+ const autoSummariseRecent = route?.params?.autoSummariseRecent === true;
+ const autoListenRecent = route?.params?.autoListenRecent === true;
+ const autoSaveRecentSummary = route?.params?.autoSaveRecentSummary === true;
+ const autoSummaryMode = route?.params?.autoSummaryMode || "short";
+ const commandNonce = route?.params?.commandNonce;
 
   if (!commandNonce) return;
   if (!files || files.length === 0) return;
@@ -417,8 +418,9 @@ useEffect(() => {
     setSearchQuery("");
   }
 
-        const runVoiceActions = async () => {
-    let workingDoc = null;
+  const runVoiceActions = async () => {
+  let workingDoc = null;
+  const summaryMode = autoSummaryMode === "detailed" ? "detailed" : "short";
 
     if (autoFolderDocCategory && autoFolderDocIndex !== null) {
   const folderDocs = files.filter(
@@ -518,7 +520,11 @@ useEffect(() => {
     setLastVoiceDoc(workingDoc);
     setLastSuggestedVoiceDocs([]);
 
-        let summaryText = (workingDoc.summary || "").trim();
+  const workingCache = readTtsCache(workingDoc);
+  let summaryText =
+  summaryMode === "detailed"
+    ? (workingCache.summaryDetailedText || "").trim()
+    : (workingDoc.summary || "").trim();
 
     if (autoOpenRecent) {
       await onOpen(workingDoc);
@@ -534,51 +540,92 @@ useEffect(() => {
         try {
           setSummarisingId(workingDoc.$id);
 
-          const result = await callSummariseFunction(workingDoc, "short");
+          const result = await callSummariseFunction(workingDoc, summaryMode);
           const newSummary = (result?.summary || "").trim();
 
-          if (newSummary) {
-            summaryText = newSummary;
+         if (newSummary) {
+  summaryText = newSummary;
 
-            await updateDocFields(workingDoc.$id, { summary: newSummary });
+  if (summaryMode === "detailed") {
+    const cache = readTtsCache(workingDoc);
 
-            workingDoc = {
-              ...workingDoc,
-              summary: newSummary,
-            };
+    const nextCacheJson = makeTtsCache({
+      bucketId: cache.bucketId || TTS_BUCKET_ID,
+      docParts: cache.docParts,
+      summaryParts: cache.summaryParts,
+      summaryDetailedParts: [],
+      summaryDetailedText: newSummary,
+    });
 
-            setLastVoiceDoc(workingDoc);
-            await load();
-          } else {
-            Alert.alert("Summarise failed", "No summary was returned.");
-          }
+    await updateTtsCacheField(workingDoc.$id, nextCacheJson);
+
+    workingDoc = {
+      ...workingDoc,
+      ttsSummaryParts: nextCacheJson,
+    };
+  } else {
+    await updateDocFields(workingDoc.$id, { summary: newSummary });
+
+    workingDoc = {
+      ...workingDoc,
+      summary: newSummary,
+    };
+  }
+
+  setLastVoiceDoc(workingDoc);
+  await load();
+} else {
+  Alert.alert("Summarise failed", "No summary was returned.");
+}
+
         } finally {
           setSummarisingId(null);
         }
       }
 
-      if (autoSummariseRecent && summaryText) {
-        openVoiceSummaryResult(workingDoc, summaryText, "short");
-      }
+     if (autoSummariseRecent && summaryText) {
+  openVoiceSummaryResult(
+    workingDoc,
+    summaryText,
+    summaryMode === "detailed" ? "detailed" : "short"
+  );
+}
     }
 
     if (autoOpenSummaryTarget && summaryText) {
       openVoiceSummaryResult(workingDoc, summaryText, "short");
     }
-
+ 
     if (autoSaveRecentSummary || autoSaveSummaryTarget) {
-      const finalSummary = summaryText || (workingDoc.summary || "").trim();
+  const latestCache = readTtsCache(workingDoc);
+  const finalSummary =
+    summaryText ||
+    (summaryMode === "detailed"
+      ? (latestCache.summaryDetailedText || "").trim()
+      : (workingDoc.summary || "").trim());
 
-      if (finalSummary) {
-        await saveSummaryToLibraryDirect(workingDoc, finalSummary, "short");
-        Alert.alert("Saved", "Summary saved to your Library.");
-      } else {
-        Alert.alert("Save failed", "No summary available to save.");
-      }
-    }
+  if (finalSummary) {
+    await saveSummaryToLibraryDirect(
+      workingDoc,
+      finalSummary,
+      summaryMode === "detailed" ? "detailed" : "short"
+    );
+    Alert.alert(
+      "Saved",
+      `${summaryMode === "detailed" ? "Detailed" : "Short"} summary saved to your Library.`
+    );
+  } else {
+    Alert.alert("Save failed", "No summary available to save.");
+  }
+}
 
-   if (autoListenSummaryTarget && summaryText) {
-  await autoPlayTtsForDoc(workingDoc, "summary", "short", summaryText);
+  if (autoListenSummaryTarget && summaryText) {
+  await autoPlayTtsForDoc(
+    workingDoc,
+    "summary",
+    summaryMode === "detailed" ? "detailed" : "short",
+    summaryText
+  );
 }
 
 if (autoListenRecent) {
@@ -605,6 +652,7 @@ navigation.setParams({
   autoSummariseRecent: false,
   autoListenRecent: false,
   autoSaveRecentSummary: false,
+  autoSummaryMode: "short",
   commandNonce: null,
 });
 }, [route?.params?.commandNonce, files]);
