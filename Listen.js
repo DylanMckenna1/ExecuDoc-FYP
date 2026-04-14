@@ -91,6 +91,7 @@ useEffect(() => {
 
   setCurrentItem(mostRecent);
   setLocalText(mostRecent.summaryText);
+  setSearchQuery("");
 
   if (autoPlayFirstMatch) {
     setTimeout(() => {
@@ -138,11 +139,12 @@ useEffect(() => {
 
   const query = normaliseVoiceSearch(autoSearchText);
 
- if ((autoOpenFirstMatch || autoPlayFirstMatch) && !query) {
+  if ((autoOpenFirstMatch || autoPlayFirstMatch) && !query) {
   const firstItem = items[0];
   if (firstItem?.summaryText) {
     setCurrentItem(firstItem);
     setLocalText(firstItem.summaryText);
+    setSearchQuery("");
 
     if (autoPlayFirstMatch) {
       setTimeout(() => {
@@ -192,7 +194,7 @@ useEffect(() => {
     const bestScore = ranked[0]?.score || 0;
 
 if ((autoOpenFirstMatch || autoPlayFirstMatch) && bestMatch && bestScore >= 35 && bestMatch.summaryText) {
-  setSearchQuery(autoSearchText);
+  setSearchQuery("");
   setCurrentItem(bestMatch);
   setLocalText(bestMatch.summaryText);
 
@@ -341,18 +343,21 @@ if (!hasText) {
       <TouchableOpacity
         key={key}
         onPress={() => setCategoryFilter(key)}
-        style={{
-          paddingVertical: 8,
-          paddingHorizontal: 12,
-          borderRadius: 999,
-          backgroundColor: active ? brand : "#F1F5F9",
-          borderWidth: 1,
-          borderColor: active ? brand : "#E2E8F0",
-          marginRight: 8,
-          marginBottom: 8,
-        }}
+style={{
+  paddingVertical: 9,
+  paddingHorizontal: 14,
+  borderRadius: 999,
+  backgroundColor: active ? brand : "#F8FAFC",
+  borderWidth: 1,
+  borderColor: active ? brand : "#E2E8F0",
+  marginRight: 8,
+}}
       >
-        <Text style={{ color: active ? "#fff" : "#0F172A", fontWeight: "800", fontSize: 12 }}>
+        <Text style={{
+  color: active ? "#fff" : "#0F172A",
+  fontWeight: "800",
+  fontSize: 13,
+}}>
           {key === "all" ? "All" : key.charAt(0).toUpperCase() + key.slice(1)}
         </Text>
       </TouchableOpacity>
@@ -363,6 +368,14 @@ if (!hasText) {
     const hasAudio =
   getAudioParts(item).length > 0 ||
   (typeof item?.audioFileId === "string" && item.audioFileId.trim().length > 0);
+
+    const keywordPreview = (item?.keywords || "")
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(", ");
+
     return (
         
      <TouchableOpacity
@@ -371,14 +384,14 @@ if (!hasText) {
   setCurrentItem(item);
   setLocalText(item.summaryText);
 }}
-        style={{
-          backgroundColor: "#FFFFFF",
-          borderRadius: 16,
-          borderWidth: 1,
-          borderColor: "#E2E8F0",
-          padding: 14,
-          marginBottom: 12,
-        }}
+style={{
+  backgroundColor: "#FFFFFF",
+  borderRadius: 18,
+  borderWidth: 1,
+  borderColor: "#E2E8F0",
+  padding: 14,
+  marginBottom: 12,
+}}
         activeOpacity={0.9}
       >
         <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
@@ -457,9 +470,21 @@ if (!hasText) {
               )}
             </View>
 
-            {!!item?.summaryText && (
-              <Text style={{ marginTop: 8, color: "#475569", lineHeight: 20 }} numberOfLines={3}>
+              {!!item?.summaryText && (
+             <Text
+                style={{ marginTop: 8, color: "#475569", lineHeight: 20 }}
+                numberOfLines={3}
+              >
                 {item.summaryText}
+              </Text>
+            )}
+
+            {!!keywordPreview && (
+              <Text
+                style={{ marginTop: 8, fontSize: 12, color: "#94A3B8" }}
+                numberOfLines={1}
+              >
+                Keywords: {keywordPreview}
               </Text>
             )}
           </View>
@@ -495,16 +520,16 @@ if (!hasText) {
   setCurrentItem(item);
   setLocalText(item.summaryText);
 }}
-            style={{
-              flex: 1,
-              paddingVertical: 10,
-              borderRadius: 12,
-              backgroundColor: "#F1F5F9",
-              borderWidth: 1,
-              borderColor: "#E2E8F0",
-              alignItems: "center",
-              marginRight: 10,
-            }}
+style={{
+  flex: 1,
+  paddingVertical: 12,
+  borderRadius: 14,
+  backgroundColor: "#F8FAFC",
+  borderWidth: 1,
+  borderColor: "#E2E8F0",
+  alignItems: "center",
+  marginRight: 10,
+}}
           >
             <Text style={{ fontWeight: "900", color: "#0F172A" }}>Open</Text>
           </TouchableOpacity>
@@ -516,14 +541,14 @@ if (!hasText) {
             setLocalText(item.summaryText);
             await playItemAudio(item);
         }}
-            style={{
-              flex: 1,
-              paddingVertical: 10,
-              borderRadius: 12,
-              backgroundColor: brand,
-              alignItems: "center",
-              opacity: busy ? 0.6 : 1,
-            }}
+style={{
+  flex: 1,
+  paddingVertical: 12,
+  borderRadius: 14,
+  backgroundColor: brand,
+  alignItems: "center",
+  opacity: busy ? 0.6 : 1,
+}}
             disabled={busy}
           >
             <Text style={{ fontWeight: "900", color: "#fff" }}>
@@ -544,11 +569,29 @@ if (!hasText) {
         refreshControl={<RefreshControl refreshing={loadingLib} onRefresh={loadLibrary} />}
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 28 }}
         ListHeaderComponent={
-         <View style={{ marginBottom: 14 }}>
-  <Text style={{ fontSize: 28, fontWeight: "900", color: "#0F172A" }}>Library</Text>
-  <Text style={{ marginTop: 6, color: "#64748B", lineHeight: 20 }}>
-    Saved summaries you can open, play again, and revisit anytime.
-  </Text>
+                 <View style={{ marginBottom: 18 }}>
+  <Text
+  style={{
+    fontSize: 28,
+    fontWeight: "900",
+    color: brand,
+    textAlign: "center",
+  }}
+>
+  Library
+</Text>
+
+<Text
+  style={{
+    marginTop: 6,
+    color: "#64748B",
+    lineHeight: 20,
+    textAlign: "center",
+    paddingHorizontal: 8,
+  }}
+>
+  Saved summaries you can open, play again, and revisit anytime.
+</Text>
 
  {!!libError && (
     <Text style={{ marginTop: 10, color: "#B91C1C", fontWeight: "800" }}>
@@ -556,17 +599,18 @@ if (!hasText) {
     </Text>
   )}
 
-            <View
-              style={{
-                marginTop: 12,
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: "#F1F5F9",
-                borderWidth: 1,
-                borderColor: "#E2E8F0",
-                borderRadius: 14,
-                paddingHorizontal: 12,
-              }}
+           <View
+style={{
+  marginTop: 14,
+  marginBottom: 2,
+  flexDirection: "row",
+  alignItems: "center",
+  backgroundColor: "#F8FAFC",
+  borderWidth: 1,
+  borderColor: "#E2E8F0",
+  borderRadius: 16,
+  paddingHorizontal: 12,
+}}
             >
               <Ionicons name="search-outline" size={18} color="#64748B" />
               <TextInput
@@ -583,9 +627,29 @@ if (!hasText) {
               )}
             </View>
 
-            <View style={{ marginTop: 12, flexDirection: "row", flexWrap: "wrap" }}>
-              {categories.map(renderChip)}
-            </View>
+            <Text
+  style={{
+    marginTop: 14,
+    marginBottom: 6,
+    fontWeight: "900",
+    fontSize: 15,
+    color: "#0F172A",
+  }}
+>
+  Categories
+</Text>
+
+<ScrollView
+  horizontal
+  showsHorizontalScrollIndicator={false}
+  contentContainerStyle={{
+    paddingVertical: 4,
+    paddingRight: 8,
+  }}
+  style={{ marginBottom: 6 }}
+>
+  {categories.map(renderChip)}
+</ScrollView>
           </View>
         }
         ListEmptyComponent={
@@ -637,18 +701,13 @@ if (!hasText) {
    <SafeAreaView style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
   <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 12, paddingBottom: 28 }}>
    
-<View
+ <View
   style={{
     backgroundColor: "#FFFFFF",
     borderRadius: 22,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     padding: 18,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
   }}
 >
   <Text style={{ fontSize: 12, fontWeight: "800", color: "#64748B" }}>
@@ -688,7 +747,7 @@ if (!hasText) {
   </TouchableOpacity>
 </View>
 
-<View
+  <View
   style={{
     marginTop: 16,
     padding: 16,
@@ -696,11 +755,6 @@ if (!hasText) {
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 1,
   }}
 >
   <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
@@ -736,13 +790,13 @@ if (!hasText) {
     </View>
   </View>
 
-  <Text style={{ fontSize: 13, fontWeight: "800", color: "#64748B" }}>
-    Summary text
-  </Text>
+<Text style={{ fontSize: 13, fontWeight: "800", color: "#64748B" }}>
+  Saved summary
+</Text>
 
-  <Text style={{ marginTop: 10, color: "#0F172A", lineHeight: 22, fontSize: 15 }}>
-    {text}
-  </Text>
+  <Text style={{ marginTop: 10, color: "#0F172A", lineHeight: 23, fontSize: 15 }}>
+  {text}
+</Text>
 </View>
 
         {busy && (

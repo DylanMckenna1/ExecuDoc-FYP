@@ -46,8 +46,8 @@ const [actionText, setActionText] = useState("");
  const stopRecording = async () => {
   if (!recording) return;
 
-  try {
-    setStatus("processing");
+   try {
+    setStatus("transcribing");
 //Stop the recording abnd get the file Uri
     await recording.stopAndUnloadAsync();
     const uri = recording.getURI();
@@ -67,14 +67,12 @@ const [actionText, setActionText] = useState("");
       setStatus("idle");
       return;
     }
-//save transcript and set status to processing 
-   setTranscript(transcriptText);
+//save transcript 
+    setTranscript(transcriptText);
+    setStatus("processing");
 
-// run command immediately
-   handleVoiceCommand(transcriptText);
-
-// update status after
-   setStatus("processing");
+    // run command immediately
+    handleVoiceCommand(transcriptText);
 
   } catch (err) {
     console.log("stop recording error", err);
@@ -350,6 +348,12 @@ const getCommandAction = (text) => {
     "listen to the latest summary",
     "listen to the latest saved summary",
     "listen to latest saved summary",
+    "play the latest save summary",
+    "play latest save summary",
+    "open the latest save summary",
+    "open latest save summary",
+    "listen to the latest save summary",
+    "listen to latest save summary",
   ])
 ) {
   return { type: "playLatestSummary" };
@@ -695,19 +699,6 @@ if (
    };
   }
 
-  if (
-  (command.startsWith("give me a detailed summary of ") ||
-    command.startsWith("give me the detailed summary of ")) &&
-  targetText
-) {
-  return {
-    type: "targetDocument",
-    value: targetText,
-    summarise: true,
-    summaryMode: "detailed",
-  };
-}
-
   return null;
 };
 
@@ -729,6 +720,7 @@ const getStatusLabel = () => {
 const handleVoiceCommand = (text) => {
   const parts = splitVoiceCommands(text);
   const rawActions = parts.map(getCommandAction).filter(Boolean);
+
 
 let inheritedTargetText = "";
 const actions = rawActions.map((action) => {
@@ -1007,21 +999,29 @@ if (action.type === "saveRecentSummary") {
   >
 
     <View style={{ alignItems: "center", marginBottom: 24 }}>
-  <Text style={{ fontSize: 32, fontWeight: "900", color: "#0F172A" }}>
+  <Text
+    style={{
+      textAlign: "center",
+      color: "#4F46E5",
+      fontSize: 28,
+      fontWeight: "900",
+    }}
+  >
     Voice Assistant
   </Text>
- <Text
-  style={{
-    marginTop: 8,
-    fontSize: 14,
-    color: "#64748B",
-    textAlign: "center",
-    lineHeight: 20,
-    maxWidth: 300,
-  }}
->
-  Find documents, trigger summaries, and listen to content using the Voice Assistant
-</Text>
+
+  <Text
+    style={{
+      marginTop: 8,
+      fontSize: 14,
+      color: "#64748B",
+      textAlign: "center",
+      lineHeight: 20,
+      maxWidth: 300,
+    }}
+  >
+    Find documents, generate summaries, and listen hands-free using the Voice Assistant
+  </Text>
 </View>
 
       <TouchableOpacity
@@ -1122,7 +1122,7 @@ if (action.type === "saveRecentSummary") {
     </View>
   )}
 
-  {isIdle && !transcript && (
+   {isIdle && !transcript && (
   <View
     style={{
       marginTop: 6,
@@ -1136,16 +1136,33 @@ if (action.type === "saveRecentSummary") {
     <Text style={{ fontSize: 12, fontWeight: "800", color: "#64748B", marginBottom: 8 }}>
       TRY SAYING
     </Text>
-    <Text style={{ fontSize: 14, color: "#0F172A", lineHeight: 22 }}>
-  “Open my essay and summarise it”{"\n"}
-  “Give me a detailed summary of my essay”{"\n"}
-  “Play the latest saved summary”{"\n"}
-  “Open the first file in study folder”{"\n"}
-</Text>
+
+    {[
+      "Open my essay and summarise it",
+      "Summarise my essay in detail",
+      "Play the latest saved summary",
+      "Open the first file in study folder",
+    ].map((example, index) => (
+      <View
+        key={index}
+        style={{
+          backgroundColor: "#FFFFFF",
+          borderRadius: 12,
+          paddingVertical: 10,
+          paddingHorizontal: 12,
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
+          marginBottom: index === 3 ? 0 : 8,
+        }}
+      >
+        <Text style={{ color: "#0F172A", fontSize: 14, lineHeight: 20 }}>
+          • {example}
+        </Text>
+      </View>
+    ))}
   </View>
 )}
 </View>
-
     </View>
   );
 }

@@ -21,7 +21,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import Pdf from 'react-native-pdf';
 import { Buffer } from 'buffer';
 import { Ionicons } from "@expo/vector-icons";
-import { saveToLibrary, getDocumentById } from "../services/appwrite";
+import { saveToLibrary, getDocumentById, listSavedItems, updateSavedItem } from "../services/appwrite";
 
 import {
   StyledContainer,
@@ -178,9 +178,13 @@ const onAutoTag = async (doc, options = {}) => {
     setTaggingId(docId);
 
     const hasText = (doc?.textContent || "").trim().length > 0;
-    if (!hasText) {
-      await callExtractTextFunction(doc);
-    }
+  if (!hasText) {
+  await callExtractTextFunction(doc);
+
+  // ensure fresh doc with text
+  const refreshed = await getDocumentById(docId);
+  doc = refreshed;
+}
 // get latest doc by iD and calls tagFunction latest doc
     const latestDoc = await getDocumentById(docId);
     await callTagFunction(latestDoc);
@@ -401,10 +405,26 @@ useEffect(() => {
  const autoListenRecent = route?.params?.autoListenRecent === true;
  const autoSaveRecentSummary = route?.params?.autoSaveRecentSummary === true;
  const autoSummaryMode = route?.params?.autoSummaryMode || "short";
+ const startUploadFlow = route?.params?.startUploadFlow === true;
  const commandNonce = route?.params?.commandNonce;
 
   if (!commandNonce) return;
-  if (!files || files.length === 0) return;
+  if (!files) return;
+
+  if (startUploadFlow) {
+    navigation.setParams({
+      startUploadFlow: false,
+      commandNonce: null,
+    });
+
+    setTimeout(() => {
+      onUploadFile();
+    }, 0);
+
+    return;
+  }
+
+  if (files.length === 0) return;
 
   if (autoFilterCategory) {
     setSelectedCategory(autoFilterCategory);
@@ -526,8 +546,9 @@ useEffect(() => {
     ? (workingCache.summaryDetailedText || "").trim()
     : (workingDoc.summary || "").trim();
 
-    if (autoOpenRecent) {
+      if (autoOpenRecent) {
       await onOpen(workingDoc);
+      setSearchQuery("");
     }
 
     const needsSummaryTargetAction =
@@ -535,12 +556,41 @@ useEffect(() => {
       autoListenSummaryTarget ||
       autoSaveSummaryTarget;
 
+      // ensure text exists before voice summary
+let text = (workingDoc.textContent || "").trim();
+
+if (!text) {
+  const extractResult = await callExtractTextFunction(workingDoc);
+
+  text = (
+    extractResult?.textContent ||
+    extractResult?.extractedText ||
+    extractResult?.text ||
+    ""
+  ).trim();
+
+  if (!text) {
+    const freshDocs = await listUserDocs(userId);
+    setFiles(freshDocs);
+
+    const refreshed = freshDocs.find((d) => d.$id === workingDoc.$id);
+    text = (refreshed?.textContent || "").trim();
+
+    if (!text) {
+      Alert.alert("No text found", "Cannot summarise this document.");
+      return;
+    }
+
+    workingDoc = refreshed;
+  }
+}
+
     if (autoSummariseRecent || needsSummaryTargetAction) {
       if (!summaryText) {
         try {
           setSummarisingId(workingDoc.$id);
 
-          const result = await callSummariseFunction(workingDoc, summaryMode);
+          const result = await callSummariseWithRetry(workingDoc, summaryMode);
           const newSummary = (result?.summary || "").trim();
 
          if (newSummary) {
@@ -594,6 +644,7 @@ useEffect(() => {
 
     if (autoOpenSummaryTarget && summaryText) {
       openVoiceSummaryResult(workingDoc, summaryText, "short");
+      setSearchQuery("");
     }
  
     if (autoSaveRecentSummary || autoSaveSummaryTarget) {
@@ -610,6 +661,7 @@ useEffect(() => {
       finalSummary,
       summaryMode === "detailed" ? "detailed" : "short"
     );
+    setSearchQuery("");
     Alert.alert(
       "Saved",
       `${summaryMode === "detailed" ? "Detailed" : "Short"} summary saved to your Library.`
@@ -626,10 +678,12 @@ useEffect(() => {
     summaryMode === "detailed" ? "detailed" : "short",
     summaryText
   );
+  setSearchQuery("");
 }
 
 if (autoListenRecent) {
   await onListenDoc(workingDoc, { autoPlay: true });
+  setSearchQuery("");
 }
   };
 
@@ -653,6 +707,7 @@ navigation.setParams({
   autoListenRecent: false,
   autoSaveRecentSummary: false,
   autoSummaryMode: "short",
+  startUploadFlow: false,
   commandNonce: null,
 });
 }, [route?.params?.commandNonce, files]);
@@ -894,8 +949,42 @@ if (!isDetailed) {
   }
 }
 
+// ensure text exists before summarising
+let workingDoc = doc;
+let text = (doc.textContent || "").trim();
+
+if (!text) {
+  const extractResult = await callExtractTextFunction(doc);
+
+  text = (
+    extractResult?.textContent ||
+    extractResult?.extractedText ||
+    extractResult?.text ||
+    ""
+  ).trim();
+
+  if (!text) {
+    // fallback: reload fresh doc
+    const freshDocs = await listUserDocs(userId);
+    setFiles(freshDocs);
+
+    const refreshed = freshDocs.find((d) => d.$id === doc.$id);
+    text = (refreshed?.textContent || "").trim();
+
+    if (!text) {
+      Alert.alert(
+        "No text found",
+        "This document has no readable text. Try another file."
+      );
+      return;
+    }
+
+    workingDoc = refreshed;
+  }
+}
+
     // Not cached, so call function 
-    const result = await callSummariseFunction(doc, mode);
+    const result = await callSummariseWithRetry(workingDoc, mode);
 
     const newSummary = (result?.summary || "").trim();
 
@@ -1034,15 +1123,16 @@ const simplifyVoiceMatchText = (value) => {
   ) {
     score += 55;
   }
-  
-  // partial overlap on title words
-  const targetWords = (simplifiedTargetText || targetText).split(" ").filter(Boolean);
-  const titleWords = simplifiedTitle.split(" ").filter(Boolean);
-  const matchedWords = targetWords.filter((word) => titleWords.includes(word)).length;
 
-  if (matchedWords >= 1) score += 15;
-  if (matchedWords >= 2) score += 30;
-  if (targetWords.length > 0 && matchedWords === targetWords.length) score += 25;
+// partial overlap on title words
+const targetWords = (simplifiedTargetText || targetText).split(" ").filter(Boolean);
+const titleWords = simplifiedTitle.split(" ").filter(Boolean);
+const matchedWords = targetWords.filter((word) => titleWords.includes(word)).length;
+
+if (matchedWords >= 1) score += 15;
+if (matchedWords >= 2) score += 30;
+if (targetWords.length > 0 && matchedWords === targetWords.length) score += 25;
+  
 
   // category match
   if (category && (targetText.includes(category) || simplifiedTargetText.includes(category))) {
@@ -1177,6 +1267,48 @@ const saveSummaryToLibraryDirect = async (doc, summaryText, summaryType = "short
   });
 };
 
+const syncSavedSummaryCategoryForDoc = async (docId, nextCategory) => {
+  if (!userId || !docId) return;
+
+  try {
+    const savedItems = await listSavedItems(userId);
+
+    const linkedItems = savedItems.filter((item) => item?.docId === docId);
+
+    await Promise.all(
+      linkedItems.map((item) =>
+        updateSavedItem(item.$id, {
+          category: nextCategory || "",
+        })
+      )
+    );
+  } catch (e) {
+    console.log("sync saved summary category failed", e);
+  }
+};
+
+const callSummariseWithRetry = async (doc, mode = "short") => {
+  const firstResult = await callSummariseFunction(doc, mode);
+
+  if (firstResult?.ok !== false && (firstResult?.summary || "").trim()) {
+    return firstResult;
+  }
+
+  const firstError = (firstResult?.error || "").toLowerCase();
+  const shouldRetry =
+    firstError.includes("connection error") ||
+    firstError.includes("network") ||
+    firstError.includes("timeout");
+
+  if (!shouldRetry) {
+    return firstResult;
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 700));
+
+  return await callSummariseFunction(doc, mode);
+};
+
   /* ─Listen full doc auto extract ─*/
 const onListenDoc = async (doc, options = {}) => {
   const autoPlay = options?.autoPlay === true;
@@ -1285,7 +1417,7 @@ const getFolderCards = () => {
   }
 // and if needed uncategorise 
   const unc = counts["uncategorised"] || 0;
-  if (unc > 0) cards.push({ key: "uncategorised", label: "Uncategorised", count: unc });
+  if (unc > 0) cards.push({ key: "uncategorised", label: "Other", count: unc });
 
   return cards;
 };
@@ -1331,23 +1463,19 @@ const filteredFiles = files
       activeOpacity={0.85}
       style={{
         width: "48%",
-        padding: 14,
-        borderRadius: 16,
+        padding: 13,
+        borderRadius: 18,
         backgroundColor: selected ? "#EEF2FF" : "#FFFFFF",
         borderWidth: 1,
-        borderColor: selected ? brand : "#E5E7EB",
+        borderColor: selected ? "#C7D2FE" : "#E2E8F0",
         marginBottom: 12,
-        shadowColor: "#000",
-        shadowOpacity: 0.06,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 6 },
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View
           style={{
-            width: 38,
-            height: 38,
+            width: 36,
+            height: 36,
             borderRadius: 12,
             backgroundColor: selected ? brand : "#EEF2FF",
             alignItems: "center",
@@ -1362,7 +1490,7 @@ const filteredFiles = files
         </Text>
       </View>
 
-      <Text style={{ marginTop: 10, fontSize: 15, fontWeight: "900", color: "#0F172A" }}>
+      <Text style={{ marginTop: 10, fontSize: 16, fontWeight: "900", color: "#0F172A" }}>
         {item.label}
       </Text>
     </TouchableOpacity>
@@ -1376,19 +1504,26 @@ const Item = ({ item }) => {
   const categoryText = (normaliseCategory(item.category) || "uncategorised")
     .replace(/^\w/, (c) => c.toUpperCase());
 
+    const keywordPreview = (item?.keywords || "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(", ");
+
   return (
-  <View
-  style={{
-  width: "100%",
-  alignSelf: "stretch",
-  backgroundColor: "#F8FAFC",
-  padding: 16,
-  borderRadius: 16,
-  marginBottom: 12,
-  borderWidth: 1,
-  borderColor: "#E2E8F0",
-}}
-  >
+    <View
+      style={{
+        width: "100%",
+        alignSelf: "stretch",
+        backgroundColor: "#FFFFFF",
+        padding: 15,
+        borderRadius: 18,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+      }}
+    >
       <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
         <TouchableOpacity
           onPress={() => onOpen(item)}
@@ -1396,7 +1531,10 @@ const Item = ({ item }) => {
           activeOpacity={0.85}
         >
           <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Text style={{ fontWeight: "800", flex: 1 }} numberOfLines={1}>
+            <Text
+             style={{ fontWeight: "900", fontSize: 15, color: "#0F172A", flex: 1 }}
+              numberOfLines={1}
+            >
               {item.title}
             </Text>
 
@@ -1409,38 +1547,53 @@ const Item = ({ item }) => {
                 marginLeft: 8,
               }}
             >
-              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "800" }}>
                 {label}
               </Text>
             </View>
           </View>
 
-          <Text style={{ marginTop: 6, fontSize: 12, color: "#6B7280" }} numberOfLines={1}>
+          <Text
+            style={{ marginTop: 6, fontSize: 12, color: "#64748B", fontWeight: "700" }}
+            numberOfLines={1}
+          >
             {categoryText}
           </Text>
 
           {!!item.summary && (
-            <Text style={{ marginTop: 8, color: "#4B5563" }} numberOfLines={2}>
+           <Text
+              style={{ marginTop: 8, color: "#475569", lineHeight: 20 }}
+              numberOfLines={2}
+            >
               {item.summary}
+           </Text>
+          )}
+
+          {!!keywordPreview && (
+            <Text
+              style={{ marginTop: 8, fontSize: 12, color: "#94A3B8" }}
+              numberOfLines={1}
+            >
+              Keywords: {keywordPreview}
             </Text>
           )}
         </TouchableOpacity>
 
-     <TouchableOpacity
-  onPress={() => openMenu(item)}
-  style={{
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#EEF2FF",
-    borderWidth: 1,
-    borderColor: "#E0E7FF",
-  }}
->
-  <Ionicons name="ellipsis-horizontal" size={18} color={brand} />
-</TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => openMenu(item)}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 12,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "#F8FAFC",
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+          }}
+        >
+          <Ionicons name="ellipsis-horizontal" size={18} color={brand} />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -1506,23 +1659,57 @@ const autoPlayTtsForDoc = async (doc, mode, variant, text) => {
          Upload, organise, summarise, and listen to your files in one place.
        </SubTitle>
 
-        <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+                <View
+          style={{
+            flexDirection: "row",
+            marginBottom: 14,
+            backgroundColor: "#FFFFFF",
+            borderRadius: 18,
+            padding: 8,
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            shadowColor: "#000",
+            shadowOpacity: 0.04,
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 1,
+          }}
+        >
           <TouchableOpacity
             onPress={onUploadFile}
-            style={{ flex: 1, backgroundColor: brand, padding: 10, borderRadius: 12, marginRight: 8 }}
+            style={{
+              flex: 1,
+              backgroundColor: brand,
+              paddingVertical: 12,
+              borderRadius: 14,
+              marginRight: 8,
+            }}
           >
-            <Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Upload File</Text>
+            <Text style={{ color: "#fff", fontWeight: "800", textAlign: "center" }}>
+              Upload File
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={onTakePhoto}
-            style={{ flex: 1, backgroundColor: '#8B5CF6', padding: 10, borderRadius: 12 }}
+            style={{
+              flex: 1,
+              backgroundColor: "#8B5CF6",
+              paddingVertical: 12,
+              borderRadius: 14,
+            }}
           >
-            <Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Take Photo</Text>
+            <Text style={{ color: "#fff", fontWeight: "800", textAlign: "center" }}>
+              Take Photo
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {msg ? <Text style={{ marginBottom: 10, color: '#6B7280' }}>{msg}</Text> : null}
+        {msg ? (
+          <Text style={{ marginBottom: 12, color: "#64748B", textAlign: "center" }}>
+            {msg}
+          </Text>
+        ) : null}
 
         <Line />
 
@@ -1544,7 +1731,7 @@ contentContainerStyle={{
 }}
 style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
 
-  ListEmptyComponent={
+    ListEmptyComponent={
     showFolderEmptyState ? (
       <View
         style={{
@@ -1558,14 +1745,38 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
           alignItems: "center",
         }}
       >
-        <Text style={{ fontSize: 16, fontWeight: "800", color: "#0F172A", marginBottom: 6 }}>
+        <Ionicons name="folder-open-outline" size={28} color="#94A3B8" />
+        <Text style={{ fontSize: 16, fontWeight: "800", color: "#0F172A", marginTop: 10, marginBottom: 6 }}>
           No documents in this folder
         </Text>
-        <Text style={{ color: "#64748B", textAlign: "center" }}>
+        <Text style={{ color: "#64748B", textAlign: "center", lineHeight: 20 }}>
           Try another folder or go back to all folders.
         </Text>
       </View>
-    ) : null
+    ) : (
+      !loading && (
+        <View
+          style={{
+            backgroundColor: "#F8FAFC",
+            borderWidth: 1,
+            borderColor: "#E2E8F0",
+            borderRadius: 16,
+            paddingVertical: 28,
+            paddingHorizontal: 18,
+            marginTop: 8,
+            alignItems: "center",
+          }}
+        >
+          <Ionicons name="document-outline" size={28} color="#94A3B8" />
+          <Text style={{ fontSize: 16, fontWeight: "800", color: "#0F172A", marginTop: 10, marginBottom: 6 }}>
+            No documents yet
+          </Text>
+          <Text style={{ color: "#64748B", textAlign: "center", lineHeight: 20 }}>
+            Upload a file or take a photo to get started.
+          </Text>
+        </View>
+      )
+    )
   }
 
  ListHeaderComponent={
@@ -1575,55 +1786,45 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
   onChangeText={setSearchQuery}
   placeholder="Search documents..."
   placeholderTextColor="#9CA3AF"
-  style={{
-    width: "100%",
-    alignSelf: "stretch",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    marginTop: 14,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 1,
-  }}
+style={{
+  width: "100%",
+  alignSelf: "stretch",
+  backgroundColor: "#FFFFFF",
+  borderRadius: 16,
+  paddingHorizontal: 16,
+  paddingVertical: 13,
+  marginTop: 14,
+  marginBottom: 18,
+  borderWidth: 1,
+  borderColor: "#E2E8F0",
+}}
 />
 
-           {selectedCategory && selectedCategory !== "all" ? (
+                    {selectedCategory && selectedCategory !== "all" ? (
   <View style={{ width: "100%", alignSelf: "stretch", marginBottom: 18 }}>
-    <View
+    <TouchableOpacity
+      onPress={() => setSelectedCategory("all")}
       style={{
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: 12,
+        alignSelf: "flex-start",
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        borderRadius: 12,
+        backgroundColor: "#F8FAFC",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        marginBottom: 14,
       }}
     >
-      <TouchableOpacity
-        onPress={() => setSelectedCategory("all")}
-        style={{
-          paddingVertical: 10,
-          paddingHorizontal: 14,
-          borderRadius: 12,
-          backgroundColor: "#F8FAFC",
-          borderWidth: 1,
-          borderColor: "#E2E8F0",
-        }}
-      >
-        <Text style={{ fontWeight: "800", color: "#0F172A" }}>All folders</Text>
-      </TouchableOpacity>
+      <Text style={{ fontWeight: "800", color: "#0F172A" }}>All folders</Text>
+    </TouchableOpacity>
 
-      <Text style={{ fontWeight: "900", fontSize: 22, color: "#0F172A" }}>
-        {(selectedCategory || "").toString().replace(/^\w/, (c) => c.toUpperCase())}
-      </Text>
-    </View>
+   <Text style={{ fontWeight: "900", fontSize: 24, color: "#0F172A" }}>
+  {(selectedCategory === "uncategorised" ? "Other" : (selectedCategory || ""))
+    .toString()
+    .replace(/^\w/, (c) => c.toUpperCase())}
+</Text>
 
-    <Text style={{ color: "#64748B", fontWeight: "600", marginBottom: 14 }}>
+    <Text style={{ color: "#64748B", fontWeight: "600", marginTop: 4, marginBottom: 14 }}>
       {filteredFiles.length} {filteredFiles.length === 1 ? "document" : "documents"}
     </Text>
 
@@ -1679,8 +1880,12 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
         borderColor: "#E5E7EB",
       }}
     >
-      <Text style={{ fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
+      <Text style={{ fontWeight: "900", fontSize: 16, marginBottom: 6 }}>
         Upload document
+      </Text>
+
+      <Text style={{ color: "#64748B", marginBottom: 10, lineHeight: 20 }}>
+        Review the title and optional category before saving your file.
       </Text>
 
       <Text style={{ marginBottom: 6, fontSize: 12, color: "#64748B" }}>
@@ -1782,23 +1987,35 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
       justifyContent: "flex-end",
     }}
   >
-    <TouchableOpacity
+     <TouchableOpacity
       activeOpacity={1}
       onPress={() => {}}
-      style={{
-        backgroundColor: "#fff",
-        padding: 16,
-        borderTopLeftRadius: 18,
-        borderTopRightRadius: 18,
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-      }}
+style={{
+  backgroundColor: "#fff",
+  padding: 18,
+  borderTopLeftRadius: 26,
+  borderTopRightRadius: 26,
+  borderWidth: 1,
+  borderColor: "#E5E7EB",
+  shadowColor: "#000",
+  shadowOpacity: 0.10,
+  shadowRadius: 18,
+  shadowOffset: { width: 0, height: -6 },
+  elevation: 5,
+}}
     >
-    <View style={{ paddingBottom: 10 }}>
-  <Text style={{ fontSize: 16, fontWeight: "900" }} numberOfLines={1}>
+    <View
+  style={{
+    paddingBottom: 14,
+    marginBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  }}
+>
+  <Text style={{ fontSize: 17, fontWeight: "900", color: "#0F172A" }} numberOfLines={1}>
     {menuDoc?.title || "Document"}
   </Text>
-  <Text style={{ marginTop: 4, fontSize: 12, color: "#6B7280" }} numberOfLines={1}>
+  <Text style={{ marginTop: 4, fontSize: 12, color: "#64748B", fontWeight: "700" }} numberOfLines={1}>
     {(normaliseCategory(menuDoc?.category) || "uncategorised").replace(/^\w/, (c) => c.toUpperCase())}
   </Text>
 </View>
@@ -1815,13 +2032,13 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
   <TouchableOpacity
     key={a.key}
     onPress={() => handleMenuAction(a.key)}
-    style={{
-      flexDirection: "row",
-      alignItems: "center",
-      paddingVertical: 12,
-      borderTopWidth: idx === 0 ? 1 : 0,
-      borderTopColor: "#F1F5F9",
-    }}
+style={{
+  flexDirection: "row",
+  alignItems: "center",
+  paddingVertical: 14,
+  borderTopWidth: idx === 0 ? 0 : 1,
+  borderTopColor: "#F8FAFC",
+}}
   >
     <View style={{ width: 28, alignItems: "center" }}>
       <Ionicons
@@ -1851,10 +2068,12 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
       <TouchableOpacity
         onPress={closeMenu}
         style={{
-          marginTop: 10,
-          paddingVertical: 12,
-          borderRadius: 12,
-          backgroundColor: "#F1F5F9",
+          marginTop: 12,
+          paddingVertical: 13,
+          borderRadius: 14,
+          backgroundColor: "#F8FAFC",
+          borderWidth: 1,
+          borderColor: "#E2E8F0",
           alignItems: "center",
         }}
       >
@@ -2050,8 +2269,9 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
                   : categoryChoice;
 
               await updateDocFields(docId, { category: next || null });
-              closeCategoryModal();
-              await load();
+               await syncSavedSummaryCategoryForDoc(docId, next || "");
+               closeCategoryModal();
+               await load();
             } catch {
               Alert.alert("Update failed", "Could not save category.");
             }
@@ -2133,15 +2353,15 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
   </View>
 
   <Text
-    style={{
-      fontSize: 18,
-      fontWeight: "900",
-      color: "#0F172A",
-      textAlign: "center",
-    }}
-  >
-    Creating summary
-  </Text>
+  style={{
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0F172A",
+    textAlign: "center",
+  }}
+>
+  Generating summary
+</Text>
 
   <Text
     style={{
@@ -2153,7 +2373,7 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
       maxWidth: 250,
     }}
   >
-    Please wait while ExecuDoc generates your summary. This can take a few seconds.
+    Please wait while ExecuDoc prepares your summary. Larger documents can take a few seconds.
   </Text>
 </View>
         </View>
@@ -2190,10 +2410,10 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
   }}
 >
   <Text style={{ fontSize: 12, fontWeight: "800", color: "#64748B" }}>
-    {ttsContext?.mode === "doc" ? "DOCUMENT AUDIO" : "SUMMARY AUDIO"}
+    {ttsContext?.mode === "doc" ? "FULL DOCUMENT AUDIO" : "SUMMARY AUDIO"}
   </Text>
   <Text style={{ marginTop: 4, fontSize: 20, fontWeight: "900", color: "#0F172A" }}>
-    {ttsContext?.mode === "doc" ? "Listen to document" : "Listen to summary"}
+    {ttsContext?.mode === "doc" ? "Listen to full document" : "Listen to summary"}
   </Text>
 </View>
 
@@ -2478,20 +2698,44 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
             <View style={{ width: 60 }} />
           </View>
 
-          {viewerLoading ? (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <ActivityIndicator size="large" />
-              <Text style={{ marginTop: 10, color: '#6B7280' }}>Loading…</Text>
+         {viewerLoading ? (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
+              <ActivityIndicator size="large" color={brand} />
+              <Text style={{ marginTop: 12, color: '#475569', fontWeight: '700' }}>
+                Loading document...
+              </Text>
+              <Text style={{ marginTop: 6, color: '#64748B', textAlign: 'center', lineHeight: 20 }}>
+                Please wait while ExecuDoc prepares your file for viewing.
+              </Text>
             </View>
-         ) : viewerType === 'text' ? (
+        ) : viewerType === 'text' ? (
   <ScrollView
     style={{ flex: 1, padding: 16 }}
     contentContainerStyle={{ paddingBottom: 24 }}
   >
+    <View
+      style={{
+        marginBottom: 12,
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: "#F8FAFC",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+      }}
+    >
+      <Text style={{ fontSize: 12, fontWeight: "800", color: "#64748B" }}>
+        EXTRACTED DOCUMENT TEXT
+      </Text>
+      <Text style={{ marginTop: 4, color: "#475569", lineHeight: 20 }}>
+        This document is displayed as readable extracted text for reliable in-app viewing.
+      </Text>
+    </View>
+
     <Text style={{ color: '#0F172A', fontSize: 15, lineHeight: 24 }}>
       {viewerText}
     </Text>
   </ScrollView>
+
 ) : viewerUri ? (
   viewerType === 'pdf' ? (
     <Pdf

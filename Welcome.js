@@ -1,8 +1,9 @@
 // screens/Welcome.js
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View, TouchableOpacity, Text, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   StyledContainer,
   InnerContainer,
@@ -34,62 +35,63 @@ export default function Welcome({
   const [recentDocs, setRecentDocs] = useState([]);
   const [recentSummaries, setRecentSummaries] = useState([]);
 
-  useEffect(() => {
-  let mounted = true;
-
-  (async () => {
+    const loadHomeData = useCallback(async () => {
     try {
       if (!user?.id) return;
 
-    const [profileRes, docsRes, savedRes] = await Promise.all([
-       databasesClient.listDocuments(DATABASE_ID, PROFILES_COLLECTION_ID, [
-        Query.equal('userID', user.id),
-        Query.limit(1),
-       ]),
-       databasesClient.listDocuments(DATABASE_ID, DOCUMENTS_COLLECTION_ID, [
-        Query.equal('userID', user.id),
-        Query.orderDesc('$createdAt'),
-        Query.limit(3),
-       ]),
-       databasesClient.listDocuments(DATABASE_ID, SAVED_ITEMS_COLLECTION_ID, [
-        Query.equal('userID', user.id),
-        Query.orderDesc('$createdAt'),
-        Query.limit(3),
-       ]),
-     ]);
+      const [profileRes, docsRes, savedRes] = await Promise.all([
+        databasesClient.listDocuments(DATABASE_ID, PROFILES_COLLECTION_ID, [
+          Query.equal('userID', user.id),
+          Query.limit(1),
+        ]),
+        databasesClient.listDocuments(DATABASE_ID, DOCUMENTS_COLLECTION_ID, [
+          Query.equal('userID', user.id),
+          Query.orderDesc('$createdAt'),
+          Query.limit(3),
+        ]),
+        databasesClient.listDocuments(DATABASE_ID, SAVED_ITEMS_COLLECTION_ID, [
+          Query.equal('userID', user.id),
+          Query.orderDesc('$createdAt'),
+          Query.limit(3),
+        ]),
+      ]);
 
       const profileDoc = profileRes.documents?.[0];
       const fullName = profileDoc
         ? [profileDoc.firstName, profileDoc.lastName].filter(Boolean).join(' ')
         : (user?.name || '');
 
-      if (!mounted) return;
-
       setDisplayName(fullName || user?.email || 'User');
       setRecentDocs(docsRes.documents || []);
       setRecentSummaries(savedRes.documents || []);
     } catch {
-      if (!mounted) return;
       setDisplayName(user?.name || user?.email || 'User');
       setRecentDocs([]);
       setRecentSummaries([]);
     }
-  })();
+  }, [user?.id, user?.name, user?.email]);
 
-  return () => {
-    mounted = false;
-  };
-}, [user?.id, user?.name, user?.email]);
+  useEffect(() => {
+    loadHomeData();
+  }, [loadHomeData]);
 
- const QuickAction = ({ icon, label, onPress }) => (
+  useFocusEffect(
+    useCallback(() => {
+      loadHomeData();
+    }, [loadHomeData])
+  );
+
+  const QuickAction = ({ icon, label, onPress }) => (
   <TouchableOpacity
-  onPress={onPress}
-  activeOpacity={0.75}
+    onPress={onPress}
+    activeOpacity={0.75}
     style={{
       flex: 1,
+      minHeight: 92,
       backgroundColor: "#FFFFFF",
       borderRadius: 18,
-      paddingVertical: 18,
+      paddingVertical: 16,
+      paddingHorizontal: 8,
       alignItems: "center",
       justifyContent: "center",
       marginHorizontal: 6,
@@ -103,7 +105,16 @@ export default function Welcome({
     }}
   >
     <Ionicons name={icon} size={24} color={brand} style={{ marginBottom: 8 }} />
-    <Text style={{ color: "#0F172A", fontWeight: "800", fontSize: 13 }}>
+    <Text
+      style={{
+        color: "#0F172A",
+        fontWeight: "800",
+        fontSize: 13,
+        textAlign: "center",
+        lineHeight: 16,
+      }}
+      numberOfLines={2}
+    >
       {label}
     </Text>
   </TouchableOpacity>
@@ -204,13 +215,13 @@ const SectionCard = ({ title, icon, children }) => (
         </Text>
 
         <Text style={{ marginTop: 6, color: "#4F46E5", lineHeight: 20 }}>
-              You can control your documents using voice:
+          Control your documents with voice commands:
         </Text>
 
         <Text style={{ marginTop: 6, color: "#3730A3", fontSize: 13, lineHeight: 20 }}>
-          • “Open my recent document”{"\n"}
-          • “Summarise my CV”{"\n"}
-          • “Play latest summary”
+          • “Open report”{"\n"}
+          • “Summarise report in detail”{"\n"}
+          • “Play the latest saved summary”
         </Text>
 
         <TouchableOpacity
@@ -230,22 +241,33 @@ const SectionCard = ({ title, icon, children }) => (
       </View>
     </SectionCard>
 
-    <SectionCard title="Quick Actions" icon="flash-outline">
+        <SectionCard title="Quick Actions" icon="flash-outline">
       <View style={{ flexDirection: "row", marginHorizontal: -6 }}>
         <QuickAction
-          icon="document-text-outline"
-          label="Documents"
-          onPress={onOpenDocuments}
-     />
+          icon="cloud-upload-outline"
+          label="Upload File"
+          onPress={() =>
+            navigation.navigate("Documents", {
+              startUploadFlow: true,
+              commandNonce: Date.now(),
+            })
+          }
+        />
         <QuickAction
           icon="mic-outline"
           label="Assistant"
           onPress={() => navigation.navigate("Assistant")}
         />
         <QuickAction
-          icon="person-circle-outline"
-          label="Profile"
-          onPress={onOpenProfile}
+          icon="sparkles-outline"
+          label="Latest Summary"
+          onPress={() =>
+            navigation.navigate("Library", {
+              autoMostRecent: true,
+              autoOpenFirstMatch: true,
+              commandNonce: Date.now(),
+            })
+          }
         />
       </View>
     </SectionCard>
@@ -308,10 +330,16 @@ const SectionCard = ({ title, icon, children }) => (
             </Text>
           </TouchableOpacity>
         ))
-      ) : (
-        <Text style={{ color: "#64748B", lineHeight: 20 }}>
-          No saved summaries yet. Save a summary from Documents to see it here.
-        </Text>
+            ) : (
+        <View style={{ alignItems: "center", paddingVertical: 10 }}>
+          <Ionicons name="sparkles-outline" size={26} color="#94A3B8" />
+          <Text style={{ color: "#64748B", marginTop: 6 }}>
+            No saved summaries yet
+          </Text>
+          <Text style={{ color: "#94A3B8", marginTop: 4, textAlign: "center", lineHeight: 20 }}>
+            Save a summary from Documents to see it here.
+          </Text>
+        </View>
       )}
     </SectionCard>
 
