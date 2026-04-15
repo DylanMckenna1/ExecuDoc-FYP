@@ -1,142 +1,95 @@
-import { Client, Databases, Storage } from "node-appwrite";
-import * as mammoth from "mammoth";
-import pdfParse from "pdf-parse";
-import Tesseract from "tesseract.js";
-// env variables
-const {
-  APPWRITE_ENDPOINT,
-  APPWRITE_PROJECT_ID,
-  APPWRITE_API_KEY, // optional fallback (console/manual testing)
-  APPWRITE_DATABASE_ID,
-  APPWRITE_COLLECTION_ID,
-  BUCKET_ID,
-} = process.env;
+import { Client, Databases } from "node-appwrite"; // appwrtie node sdk 
 
+//appwrite function handler it recieves the below
 export default async ({ req, res, log, error }) => {
-  try {
-    const missing = [ // missing env variable check
-      !APPWRITE_ENDPOINT && "APPWRITE_ENDPOINT",
-      !APPWRITE_PROJECT_ID && "APPWRITE_PROJECT_ID",
-      !APPWRITE_DATABASE_ID && "APPWRITE_DATABASE_ID",
-      !APPWRITE_COLLECTION_ID && "APPWRITE_COLLECTION_ID",
-      !BUCKET_ID && "BUCKET_ID",
-    ].filter(Boolean);
-// fail early if function isnt configured properly
-    if (missing.length) {
+  try {// reads request body
+    const body = req.bodyJson || {};
+    const docId = body.docId; // which document to tag
+    const inputText = (body.text || "").toString();
+// if no docid fail early 
+    if (!docId) {
+      return res.json({ ok: false, error: "docId is required" }, 400);
+    }
+// read env vars
+    const endpoint = process.env.APPWRITE_ENDPOINT;
+    const projectId = process.env.APPWRITE_PROJECT_ID;
+    const apiKey = process.env.APPWRITE_API_KEY;
+    const databaseId = process.env.DATABASE_ID;
+    const collectionId = process.env.DOCUMENTS_COLLECTION_ID;
+// validate env vars
+    if (!endpoint || !projectId || !apiKey || !databaseId || !collectionId) {
       return res.json(
-        { ok: false, error: `Missing env vars: ${missing.join(", ")}` },
-        400
+        {
+          ok: false, // if not configured fail early 
+          error: "Missing env vars. Check APPWRITE_* and DATABASE_ID / DOCUMENTS_COLLECTION_ID."
+        },
+        500
       );
     }
+// create appwrite client 
+    const client = new Client() // sets up appwrite node sdk to give database access
+      .setEndpoint(endpoint)
+      .setProject(projectId)
+      .setKey(apiKey);
 
-    //  reads user JWT from the request headers
-    const jwt =
-      (req.headers?.["x-appwrite-jwt"] ||
-        req.headers?.["X-Appwrite-JWT"] ||
-        req.headers?.["x-appwrite-user-jwt"] ||
-        "") // allows function to act as the logged in user, so follows user permissions
-        .toString()
-        .trim();
-//create Appwrite client
-    const client = new Client() // creates the appwrite sdk client
-      .setEndpoint(APPWRITE_ENDPOINT)
-      .setProject(APPWRITE_PROJECT_ID);
+    const db = new Databases(client);
 
-    // Prefered auth Jwt which acts as logged-in user
-    if (jwt) {
-      client.setJWT(jwt);
-    } else if (APPWRITE_API_KEY) {
-      // Fallback for manual console testing ONLY
-      client.setKey(APPWRITE_API_KEY);
-      // otherwise reject the request
-    } else {
-      return res.json(
-        { ok: false, error: "Missing X-Appwrite-JWT (login required)" },
-        401
-      );
-    }
-// access to database and storage operations
-    const databases = new Databases(client);
-    const storage = new Storage(client);
+    // load document record from document collection
+    const doc = await db.getDocument(databaseId, collectionId, docId);
+// builds the text the function will scan for keywords
+    const haystack = (
+      inputText ||
+      doc.summary ||
+      doc.textContent ||
+      ""
+    )
+      .toString()
+      .toLowerCase();
+// defining category rules
+    const categories = [// each category has a name and keywords
+      { name: "finance", keywords: ["stock", "invest", "investment", "bank", "loan", "trading", "finance", "revenue"] },
+      { name: "legal", keywords: ["law", "contract", "court", "legal", "terms", "policy", "gdpr"] },
+      { name: "study", keywords: ["exam", "lecture", "module", "assignment", "study", "notes", "university"] },
+      { name: "work", keywords: ["meeting", "project", "client", "deliverable", "deadline", "work"] },
+      { name: "history", keywords: ["history", "war", "century", "ancient", "medieval"] },
+      { name: "personal", keywords: ["personal", "diary", "journal", "health", "family"] }
+    ];
+// scores categories
+    let bestCategory = "";
+    let bestScore = 0;
 
-    // Parse request body
-    let body = {};
-    try {
-      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {}; // parse incoming json
-    } catch { // avoid crashes from bodies
-      body = {};
-    }
-// Read docID or DocumentsID
-    const docId = body.documentId || body.docId;
-    if (!docId) return res.json({ ok: false, error: "Missing documentId/docId" }, 400);
-
-    //loads document record
-    const doc = await databases.getDocument(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_COLLECTION_ID, // access to metadata
-      docId
-    );
-// use the fileID
-    const fileId = body.fileId || doc.fileId;
-    if (!fileId) return res.json({ ok: false, error: "Missing fileId" }, 400);
-
-    // Download file by SDK 
-    const download = await storage.getFileDownload(BUCKET_ID, fileId);
-
-    // Normalize to Buffer
-    let buffer;
-    if (download instanceof ArrayBuffer) { // ensures extraction libraries can read it consistently 
-      buffer = Buffer.from(download);
-    } else if (download?.arrayBuffer) {
-      const ab = await download.arrayBuffer();
-      buffer = Buffer.from(ab);
-    } else if (Buffer.isBuffer(download)) {
-      buffer = download;
-    } else {
-      buffer = Buffer.from(download);
-    }
-// determine file type
-    const mimeType = (body.mimeType || doc.mimeType || "").toLowerCase(); //mime type first
-    const title = (body.title || doc.title || "").toLowerCase(); 
-
-    let textContent = "";
-
-    // --- DOCX ---
-    if (mimeType.includes("wordprocessingml.document") || title.endsWith(".docx")) {
-      const result = await mammoth.extractRawText({ buffer });
-      textContent = (result?.value || "").trim();
+    for (const c of categories) { //for each category loop through keywords
+      let score = 0;
+      for (const k of c.keywords) {
+        if (haystack.includes(k)) score += 1; // if keyword exists add 1 to score
+      }
+      if (score > bestScore) { // highest score wins 
+        bestScore = score;
+        bestCategory = c.name;
+      }
     }
 
-    // --- IMAGE (OCR) ---
-    else if (mimeType.startsWith("image/")) {
-      const { data } = await Tesseract.recognize(buffer, "eng");
-      textContent = (data?.text || "").trim();
+    // extract keywords to collect matching keywords and avoid duplicates
+    const detectedKeywords = [];
+    for (const c of categories) {
+      for (const k of c.keywords) {
+        if (haystack.includes(k) && !detectedKeywords.includes(k)) {
+          detectedKeywords.push(k);
+        }
+      }
     }
-
-    // --- PDF---
-    else if (mimeType.includes("pdf") || title.endsWith(".pdf")) {
-      const pdf = await pdfParse(buffer);
-      textContent = (pdf?.text || "").trim();
-    }
-
-    // --- other ---
-    else {
-      textContent = "";
-    }
-
-    // Save into DB so Documents.js can read doc.textContent next time
-    await databases.updateDocument(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_COLLECTION_ID,
-      docId,
-      { textContent }
-    );
-//frontend service can also use the extracted text
-    return res.json({ ok: true, docId, textContent });
-    // backend error handling
+// respect existing category 
+const existingCategory = (doc.category || "").toString().trim();
+// if category exixts 
+return res.json({
+  ok: true,
+  docId,
+  category: !existingCategory ? (bestCategory || "") : null, // backend returns null for category
+  keywords: detectedKeywords.slice(0, 10).join(", "),
+});
+// error handling
   } catch (e) {
-    error(e);
-    return res.json({ ok: false, error: e?.message || String(e) }, 500);
+    error(String(e?.message || e));
+    return res.json({ ok: false, error: e?.message || "Unknown error" }, 500);
   }
 };
-

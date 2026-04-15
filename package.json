@@ -1,11 +1,9 @@
 {
-  "name": "summariseDocument-fn",
+  "name": "tag-document",
   "version": "1.0.0",
+  "main": "src/main.js",
   "type": "module",
   "dependencies": {
-    "openai": "^4.0.0",
-    "pdf-parse": "^1.1.1",
-    "mammoth": "^1.6.0",
-    "node-fetch": "^3.3.2"
+    "node-appwrite": "^13.0.0"
   }
 }
