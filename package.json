@@ -1,9 +1,5 @@
 {
-  "name": "tag-document",
+  "name": "tts-generate",
   "version": "1.0.0",
-  "main": "src/main.js",
-  "type": "module",
-  "dependencies": {
-    "node-appwrite": "^13.0.0"
-  }
+  "type": "module"
 }
