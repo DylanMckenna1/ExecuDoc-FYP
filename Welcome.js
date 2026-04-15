@@ -289,7 +289,7 @@ const SectionCard = ({ title, icon, children }) => (
               {doc.title || "Untitled document"}
             </Text>
             <Text style={{ marginTop: 4, color: "#64748B", fontSize: 13 }}>
-             {String(doc.category || "Uncategorised").toUpperCase()}
+             {String(doc.category || "Other").toUpperCase()}
             </Text>
           </TouchableOpacity>
         ))
