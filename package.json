@@ -1,12 +1,11 @@
 {
-  "name": "extractDocumentText",
+  "name": "summariseDocument-fn",
   "version": "1.0.0",
   "type": "module",
-  "main": "main.js",
   "dependencies": {
-    "node-appwrite": "^14.0.1",
-    "mammoth": "^1.7.1",
+    "openai": "^4.0.0",
     "pdf-parse": "^1.1.1",
-    "tesseract.js": "^5.1.0"
+    "mammoth": "^1.6.0",
+    "node-fetch": "^3.3.2"
   }
 }
