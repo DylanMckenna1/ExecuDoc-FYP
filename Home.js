@@ -91,7 +91,7 @@ const SecondaryButton = styled.TouchableOpacity`
   width: 92%;
   height: 60px;
   align-self: center;
-  border-radius: 5px;
+  border-radius: 12px;
   border-width: 1px;
   border-color: ${brand};
   background-color: transparent;

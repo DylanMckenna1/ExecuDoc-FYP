@@ -4,20 +4,20 @@ import Constants from 'expo-constants';
 
 const StatusBarHeight = Constants.statusBarHeight;
 
-// Colors (white theme)
+// Colors 
 export const Colors = {
   // page & cards
-  primary:  '#FFFFFF',   // page background (white)
-  surface:  '#F5F7FB',   // light card background (subtle gray)
+  primary:  '#FFFFFF',   
+  surface:  '#F5F7FB',   
 
   // text & inputs
-  secondary:'#E6E8F2',   // input bg (light gray)
-  tertiary: '#1F2937',   // main text (dark)
-  darkLight:'#8C97B5',   // muted text
+  secondary:'#E6E8F2',   
+  tertiary: '#1F2937',   
+  darkLight:'#8C97B5',   
 
   // brand
-  brand:   '#6E59F9',    // purple
-  brand2:  '#3AA0FF',    // blue (for gradients)
+  brand:   '#6E59F9',    
+  brand2:  '#3AA0FF',    
 
   // status
   green:   '#22C55E',
@@ -73,14 +73,13 @@ export const StyledTextInput = styled.TextInput`
   background-color: ${secondary};
   padding: 15px;
   padding-left: 55px;
-  padding-right: 55px;
-  border-radius: 5px;
+  padding-right: 72px;
+  border-radius: 12px;
   font-size: 16px;
   height: 60px;
   margin-vertical: 3px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   color: ${tertiary};
-  /* Web nicety: remove blue outline; harmless on native */
   outline-style: none;
 `;
 
@@ -98,7 +97,7 @@ export const LeftIcon = styled.View`
 `;
 
 export const RightIcon = styled.TouchableOpacity`
-  right: 15px;
+  right: 18px;
   top: 38px;
   position: absolute;
   z-index: 1;
@@ -109,7 +108,7 @@ export const StyledButton = styled.TouchableOpacity`
   background-color: ${brand};
   justify-content: center;
   align-items: center;
-  border-radius: 5px;
+  border-radius: 12px;
   margin-vertical: 5px;
   height: 60px;
 `;
@@ -153,17 +152,6 @@ export const TextLinkContent = styled.Text`
   font-weight: 600;
 `;
 
-/* Google button placeholder action */
-export const GoogleButton = styled.TouchableOpacity`
-  padding: 15px;
-  background-color: #34a853; /* Google green */
-  justify-content: center;
-  align-items: center;
-  border-radius: 5px;
-  margin-vertical: 5px;
-  height: 60px;
-  flex-direction: row;
-`;
 
 /*  UI cards/headers */
 export const ScreenTitle = styled.Text`
