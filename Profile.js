@@ -1,5 +1,5 @@
 // screens/Profile.js
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,16 +14,39 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../components/styles";
-import { account } from "../services/appwrite";
+import { BarChart } from 'react-native-gifted-charts';
+import { useFocusEffect } from "@react-navigation/native";
 
+import {
+  account,
+  getUserProfile,
+  databasesClient,
+  DATABASE_ID,
+  DOCUMENTS_COLLECTION_ID,
+  SAVED_ITEMS_COLLECTION_ID,
+  Query,
+} from "../services/appwrite";
 const { brand } = Colors;
+
 
 export default function Profile({ user: userProp, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(userProp || null);
+  const [userType, setUserType] = useState("");
+  const [docCount, setDocCount] = useState(0);
+  const [savedCount, setSavedCount] = useState(0);
+  const [categoryChartData, setCategoryChartData] = useState([]);
+  const [topCategory, setTopCategory] = useState("None");
+  const [activeCategoryCount, setActiveCategoryCount] = useState(0);
 
-  // Future feature (role):
-  const [role, setRole] = useState(null);
+  const userTypeLabel =
+  userType === "student"
+    ? "Student"
+    : userType === "professional"
+    ? "Professional"
+    : userType === "personal"
+    ? "Personal"
+    : "";
 
   // Change password modal
   const [pwOpen, setPwOpen] = useState(false);
@@ -33,24 +56,97 @@ export default function Profile({ user: userProp, onLogout }) {
   const [pwSaving, setPwSaving] = useState(false);
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        // If user wasn’t passed in, fetch it safely
-        if (!userProp) {
-          const me = await account.get();
-          if (mounted) setUser(me);
-        }
-      } catch (e) {
-        console.log("profile load error", e);
-      } finally {
-        if (mounted) setLoading(false);
+  let mounted = true;
+
+  (async () => {
+    try {
+      let activeUser = userProp;
+
+      if (!activeUser) {
+        activeUser = await account.get();
+        if (mounted) setUser(activeUser);
       }
-    })();
-    return () => {
-      mounted = false;
+
+      const userId = activeUser?.$id || activeUser?.id;
+      if (userId) {
+        const profile = await getUserProfile(userId);
+        if (mounted) {
+          setUserType((profile?.userType || "").trim().toLowerCase());
+        }
+      }
+    } catch (e) {
+      console.log("profile load error", e);
+    } finally {
+      if (mounted) setLoading(false);
+    }
+  })();
+
+  return () => {
+    mounted = false;
+  };
+}, [userProp]);
+
+const loadStats = useCallback(async () => {
+  try {
+    const userId = user?.$id || user?.id;
+    if (!userId) return;
+
+    const [docsRes, saved] = await Promise.all([
+      databasesClient.listDocuments(DATABASE_ID, DOCUMENTS_COLLECTION_ID, [
+        Query.equal("userID", userId),
+      ]),
+      databasesClient.listDocuments(DATABASE_ID, SAVED_ITEMS_COLLECTION_ID, [
+        Query.equal("userID", userId),
+      ]),
+    ]);
+
+    const docs = docsRes.documents || [];
+
+    setDocCount(docsRes.total || 0);
+    setSavedCount(saved.total || 0);
+
+    const normaliseCategory = (value) => {
+      const v = (value || "").trim().toLowerCase();
+      return v || "other";
     };
-  }, [userProp]);
+
+    const categoryCounts = docs.reduce((acc, doc) => {
+      const key = normaliseCategory(doc.category);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const chartData = Object.entries(categoryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([category, count]) => ({
+        value: count,
+        label: category.charAt(0).toUpperCase() + category.slice(1),
+      }));
+
+    const sortedCategories = Object.entries(categoryCounts).sort(
+      (a, b) => b[1] - a[1]
+    );
+
+    setTopCategory(
+      sortedCategories[0]?.[0]
+        ? sortedCategories[0][0].charAt(0).toUpperCase() +
+            sortedCategories[0][0].slice(1)
+        : "None"
+    );
+
+    setActiveCategoryCount(sortedCategories.length);
+    setCategoryChartData(chartData);
+  } catch (err) {
+    console.log("Profile stats error:", err);
+  }
+}, [user]);
+
+useFocusEffect(
+  useCallback(() => {
+    loadStats();
+  }, [loadStats])
+);
 
   const displayName = useMemo(() => {
     const n = user?.name?.trim();
@@ -67,6 +163,10 @@ export default function Profile({ user: userProp, onLogout }) {
   }, [displayName]);
 
   const email = user?.email || "—";
+
+const memberSince = user?.$createdAt
+  ? new Date(user.$createdAt).toLocaleDateString()
+  : "—";
 
   const doLogout = async () => {
     try {
@@ -138,17 +238,108 @@ export default function Profile({ user: userProp, onLogout }) {
             <Text style={styles.name}>{displayName}</Text>
             <Text style={styles.sub}>{email}</Text>
 
-            <View style={styles.pillRow}>
-              <View style={styles.pill}>
-                <Ionicons name="school-outline" size={14} color={brand} />
-                <Text style={styles.pillText}>
-                  {role ? role : "Role not set"}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
+            {!!userTypeLabel && (
+  <View style={styles.pillRow}>
+    <View style={styles.pill}>
+      <Ionicons name="school-outline" size={14} color={brand} />
+      <Text style={styles.pillText}>
+        {userTypeLabel}
+      </Text>
+    </View>
+  </View>
+)}
+ </View>       
+  </View>
+   </View>
+
+<View style={styles.section}>
+  <Text style={styles.sectionTitle}>Your activity</Text>
+
+  <View style={styles.activityCard}>
+  <View style={styles.activityRow}>
+
+    <Text style={styles.activityLabel}>Member since</Text>
+    <Text style={styles.activityValue}>{memberSince}</Text>
+  </View>
+
+  <View style={styles.activityRow}>
+    <Text style={styles.activityLabel}>Documents</Text>
+    <Text style={styles.activityValue}>{docCount}</Text>
+  </View>
+
+  <View style={[styles.activityRow, { borderBottomWidth: 0 }]}>
+    <Text style={styles.activityLabel}>Saved summaries</Text>
+    <Text style={styles.activityValue}>{savedCount}</Text>
+  </View>
+</View>
+</View>
+
+<View style={styles.section}>
+  <Text style={styles.sectionTitle}>Most used categories</Text>
+  <Text style={styles.chartSubtitle}>Based on your uploaded documents</Text>
+
+  <View style={[styles.activityCard, { paddingTop: 18 }]}>
+    {categoryChartData.length > 0 ? (
+      <BarChart
+        data={categoryChartData}
+        barWidth={30}
+        spacing={22}
+        roundedTop
+        roundedBottom
+        hideRules={false}
+        rulesColor="#EEF2FF"
+        hideYAxisText={false}
+        yAxisThickness={0}
+        xAxisThickness={1}
+        xAxisColor="#E2E8F0"
+        noOfSections={4}
+        maxValue={
+          categoryChartData.length > 0
+            ? Math.max(...categoryChartData.map(item => item.value), 4)
+            : 4
+        }
+        frontColor={brand}
+        yAxisTextStyle={{
+          color: "#94A3B8",
+          fontSize: 11,
+        }}
+        xAxisLabelTextStyle={{
+          color: "#64748B",
+          fontSize: 11,
+          fontWeight: "600",
+        }}
+        showValuesAsTopLabel
+        topLabelTextStyle={{
+          color: "#0F172A",
+          fontSize: 11,
+          fontWeight: "700",
+        }}
+      />
+    ) : (
+      <Text style={{ color: "#64748B", lineHeight: 20 }}>
+        Upload a few documents to see your most used categories.
+      </Text>
+    )}
+
+    <View style={styles.chartStatsRow}>
+      <View style={styles.chartStatPill}>
+        <Text style={styles.chartStatLabel}>Top</Text>
+        <Text style={styles.chartStatValue}>{topCategory}</Text>
       </View>
+
+      <View style={styles.chartStatPill}>
+        <Text style={styles.chartStatLabel}>Categories</Text>
+        <Text style={styles.chartStatValue}>{activeCategoryCount}</Text>
+      </View>
+
+      <View style={styles.chartStatPill}>
+        <Text style={styles.chartStatLabel}>Docs</Text>
+        <Text style={styles.chartStatValue}>{docCount}</Text>
+      </View>
+    </View>
+  </View>
+</View>
+  
 
       {/* Menu */}
       <View style={styles.section}>
@@ -159,13 +350,6 @@ export default function Profile({ user: userProp, onLogout }) {
           title="Change password"
           subtitle="Update your login password"
           onPress={() => setPwOpen(true)}
-        />
-
-        <Row
-          icon="person-outline"
-          title="User type"
-          subtitle="Student / Doctor / Teacher (coming soon)"
-          onPress={() => Alert.alert("Coming soon", "User type selection will be added in signup.")}
         />
 
         <Row
@@ -344,6 +528,71 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
+
+activityCard: {
+  backgroundColor: "#FFFFFF",
+  borderRadius: 16,
+  padding: 14,
+  borderWidth: 1,
+  borderColor: "#E2E8F0",
+},
+
+activityRow: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  paddingVertical: 10,
+  borderBottomWidth: 1,
+  borderBottomColor: "#F1F5F9",
+},
+
+activityLabel: {
+  fontSize: 13,
+  fontWeight: "700",
+  color: "#64748B",
+},
+
+activityValue: {
+  fontSize: 14,
+  fontWeight: "800",
+  color: "#0F172A",
+},
+
+chartSubtitle: {
+  fontSize: 12,
+  color: "#94A3B8",
+  marginBottom: 8,
+  marginLeft: 4,
+},
+
+chartStatsRow: {
+  flexDirection: "row",
+  gap: 8,
+  marginTop: 14,
+},
+
+chartStatPill: {
+  flex: 1,
+  backgroundColor: "#F8FAFC",
+  borderWidth: 1,
+  borderColor: "#E2E8F0",
+  borderRadius: 12,
+  paddingVertical: 10,
+  paddingHorizontal: 10,
+},
+
+chartStatLabel: {
+  fontSize: 11,
+  fontWeight: "700",
+  color: "#64748B",
+  marginBottom: 4,
+},
+
+chartStatValue: {
+  fontSize: 13,
+  fontWeight: "800",
+  color: "#0F172A",
+},
 
   modalButtons: { flexDirection: "row", gap: 12, marginTop: 14 },
   btn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center", justifyContent: "center" },

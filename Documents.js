@@ -133,12 +133,11 @@ function readTtsCache(doc) {
 // setting up all screen states 
 export default function Documents({ route, navigation }) {
   const [user, setUser] = useState(null);
-  const userId = user?.$id;
+  const userId = user?.$id || user?.id;
 
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
-  const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [summarisingId, setSummarisingId] = useState(null);
   const [summaryPickerVisible, setSummaryPickerVisible] = useState(false);
@@ -370,7 +369,6 @@ const handleMenuAction = async (action) => {
     try {
       const docs = await listUserDocs(userId);
       setFiles(docs);
-      if (!docs.length) setMsg('You have not uploaded any documents yet.');
     } catch (e) {
       console.log('list docs error', e);
       setMsg('Could not load your documents.');
@@ -687,8 +685,12 @@ if (autoListenRecent) {
 }
   };
 
-  runVoiceActions().catch((e) => {
+  runVoiceActions()
+  .catch((e) => {
     Alert.alert("Voice command failed", e?.message || "Please try again.");
+  })
+  .finally(() => {
+    setSearchQuery("");
   });
 
 navigation.setParams({
@@ -762,7 +764,7 @@ navigation.setParams({
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       quality: 0.8,
     });
 
@@ -1423,17 +1425,9 @@ const getFolderCards = () => {
 };
 
 const folderCards = getFolderCards();
-// filter files in 3 stages 
-const filteredFiles = files
-  .filter((doc) => {
-    if (filter === "all") return true;
-    const t = deriveType(doc);
-    if (filter === "pdf") return t === "pdf";
-    if (filter === "image") return t === "image";
-    if (filter === "other") return t === "other";
-    return true;
-  })
-  .filter((doc) => {
+// filter {!!userTypeLabel && (
+  const filteredFiles = files
+   .filter((doc) => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return true;
 
@@ -1704,13 +1698,6 @@ const autoPlayTtsForDoc = async (doc, mode, variant, text) => {
             </Text>
           </TouchableOpacity>
         </View>
-
-        {msg ? (
-          <Text style={{ marginBottom: 12, color: "#64748B", textAlign: "center" }}>
-            {msg}
-          </Text>
-        ) : null}
-
         <Line />
 
    <FlatList
