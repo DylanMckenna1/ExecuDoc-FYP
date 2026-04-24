@@ -21,6 +21,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import Pdf from 'react-native-pdf';
 import { Buffer } from 'buffer';
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { saveToLibrary, getDocumentById, listSavedItems, updateSavedItem } from "../services/appwrite";
 
 import {
@@ -52,9 +53,10 @@ const { brand } = Colors;
 
 /* ─ helpers ─ */
 
+// determine document type 
 function deriveType(doc) {
   if (doc.fileType) return doc.fileType;
-
+// based on mime type and file name
   const mime = (doc.mimeType || '').toLowerCase();
   const title = (doc.title || '').toLowerCase();
 
@@ -63,7 +65,7 @@ function deriveType(doc) {
   if (mime.startsWith('audio/')) return 'audio';
   return 'other';
 }
-
+// return display label and color for document 
 function typeLabelAndColor(type) {
   switch (type) {
     case 'pdf':
@@ -76,7 +78,7 @@ function typeLabelAndColor(type) {
       return { label: 'Document', bg: '#6C63FF' };
   }
 }
-
+// safely parse json for stored tts cache
 function safeParseJson(str) {
   if (!str || typeof str !== 'string') return null;
   try {
@@ -85,8 +87,8 @@ function safeParseJson(str) {
     return null;
   }
 }
-
-function makeTtsCache({
+// build tts cache object
+function makeTtsCache({ // stores audio parts for documents/summaries
   bucketId,
   docParts,
   summaryParts,
@@ -104,7 +106,7 @@ function makeTtsCache({
       typeof summaryDetailedText === "string" ? summaryDetailedText : "",
   });
 }
-
+// read and normalise tts cache from doc record
 function readTtsCache(doc) {
   const parsed = safeParseJson(doc?.ttsSummaryParts);
   if (parsed && typeof parsed === "object") {
@@ -130,8 +132,9 @@ function readTtsCache(doc) {
   };
 }
 
-// setting up all screen states 
+// main document component for all features and ui
 export default function Documents({ route, navigation }) {
+  // user session
   const [user, setUser] = useState(null);
   const userId = user?.$id || user?.id;
 
@@ -163,7 +166,7 @@ export default function Documents({ route, navigation }) {
   const [kwModalDoc, setKwModalDoc] = useState(null);
   const [lastVoiceDoc, setLastVoiceDoc] = useState(null);
   const [lastSuggestedVoiceDocs, setLastSuggestedVoiceDocs] = useState([]);
-
+// Auto tag, ensure text exists 
 const onAutoTag = async (doc, options = {}) => {
   const silent = options?.silent === true;
   const docId = doc?.$id;
@@ -176,7 +179,7 @@ const onAutoTag = async (doc, options = {}) => {
   try {
     setTaggingId(docId);
 
-    const hasText = (doc?.textContent || "").trim().length > 0;
+  const hasText = (doc?.textContent || "").trim().length > 0;
   if (!hasText) {
   await callExtractTextFunction(doc);
 
@@ -204,7 +207,7 @@ const onAutoTag = async (doc, options = {}) => {
   }
 };
 
-  // Viewer state
+  // Viewer state for in app file viewer
 const [viewerVisible, setViewerVisible] = useState(false);
 const [viewerUri, setViewerUri] = useState(null);
 const [viewerTitle, setViewerTitle] = useState('');
@@ -212,7 +215,9 @@ const [viewerLoading, setViewerLoading] = useState(false);
 const [viewerType, setViewerType] = useState('pdf');
 const [viewerText, setViewerText] = useState('');
 const [kwValue, setKwValue] = useState("");
+// Menu and Modal helpers
 
+// summary type picker modal
   const openSummaryPicker = (doc) => {
   setSummaryPickerDoc(doc);
   setSummaryPickerMode("short"); // default
@@ -254,7 +259,7 @@ const openCategoryModalForDoc = (doc) => {
   setCategoryCustom("");
   setCategoryModalVisible(true);
 };
-
+// handles document menu action
 const handleMenuAction = async (action) => {
   const doc = menuDoc;
   if (!doc) return;
@@ -270,21 +275,22 @@ const handleMenuAction = async (action) => {
   if (action === "delete") onDelete(doc);
 };
 
-  // TTS modal state
+  // TTS modal state for playback modal
   const [ttsVisible, setTtsVisible] = useState(false);
   const [ttsText, setTtsText] = useState('');
   const [ttsContext, setTtsContext] = useState(null); // { docId, mode: 'doc'|'summary' }
   const [ttsAutoPlayRequested, setTtsAutoPlayRequested] = useState(false);
 
-  // Function URLs from .env 
+  // TTS backend function config
   const TTS_FUNCTION_URL =
     process.env.EXPO_PUBLIC_TTS_FUNCTION_URL ||
     'https://697201a400145780b4c0.fra.appwrite.run';
 
-  // Keptin  file
+  // Kept in  file
   const APPWRITE_ENDPOINT = 'https://fra.cloud.appwrite.io/v1';
   const TTS_BUCKET_ID = '6972be01002bee843a33';
 
+ // tts hook, handles generating, downloading and controlling audio playback
   const {
     status: ttsStatus,
     error: ttsError,
@@ -301,7 +307,7 @@ const handleMenuAction = async (action) => {
   });
 
   const ttsBusy = ttsStatus === 'generating' || ttsStatus === 'downloading';
-
+// auto play audio when tts is opened from assistant
  useEffect(() => {
   if (!ttsVisible || !ttsAutoPlayRequested || !ttsText) return;
   if (ttsStatus === "playing") return;
@@ -338,7 +344,7 @@ const handleMenuAction = async (action) => {
   files,
   ttsBusy,
 ]);
-
+// load current logged in user from appwrite 
   useEffect(() => {
     let mounted = true;
 
@@ -356,7 +362,7 @@ const handleMenuAction = async (action) => {
       mounted = false;
     };
   }, []);
-
+// load the users current documents from database
   const load = useCallback(async () => {
     if (!userId) {
       setFiles([]);
@@ -376,11 +382,20 @@ const handleMenuAction = async (action) => {
       setLoading(false);
     }
   }, [userId]);
-
-  useEffect(() => {
+// refresh documents once user session is available
+useEffect(() => {
     if (userId) load();
   }, [userId, load]);
 
+useFocusEffect(
+  useCallback(() => {
+    if (userId) {
+      load();
+    }
+  }, [userId, load])
+);
+
+// Voice assistant handler, reads navigation params and executes action
 useEffect(() => {
   const autoOpenRecent = route?.params?.autoOpenRecent === true;
   const autoFilterCategory = route?.params?.autoFilterCategory;
@@ -435,7 +450,7 @@ useEffect(() => {
   } else {
     setSearchQuery("");
   }
-
+// main voice action to resolve target and run requested action
   const runVoiceActions = async () => {
   let workingDoc = null;
   const summaryMode = autoSummaryMode === "detailed" ? "detailed" : "short";
@@ -789,7 +804,7 @@ navigation.setParams({
     Alert.alert('Upload failed', e?.message || 'Please try again.');
   }
 };
-
+// save file and create doc record
 const confirmUpload = async () => {
   if (!userId || !pendingFile) return;
 
@@ -808,13 +823,13 @@ const confirmUpload = async () => {
     setUploadCategory("");
 
     await onAutoTag(createdDoc, { silent: true });
-    await load();
+    await load(); // refresh 
   } catch (e) {
     console.log('confirm upload error', e);
     Alert.alert('Upload failed', e?.message || 'Please try again.');
   }
 };
-
+// reset modal state
 const closeUploadModal = () => {
   setShowUploadModal(false);
   setPendingFile(null);
@@ -923,7 +938,7 @@ if (isDocxFile) {
   };
 
   /* ─ summarise ─*/
-//short/detailed
+// generate short / detailed summary using cache first 
  const onSummarise = async (doc, mode = "short") => {
   const isDetailed = mode === "detailed";
   try {
@@ -1034,7 +1049,7 @@ if (!isDetailed) {
     setSummarisingId(null);
   }
 };
-
+// rank documents against assistant search text to find the best command match
 const getRankedVoiceTargetDocs = ({
   files,
   autoTargetText,
@@ -1160,7 +1175,7 @@ if (targetWords.length > 0 && matchedWords === targetWords.length) score += 25;
     .map((doc) => ({ doc, score: scoreDoc(doc) }))
     .sort((a, b) => b.score - a.score);
 };
-
+// check if the top matches are too close to pick one
 const hasAmbiguousTopMatches = (ranked = []) => {
   if (!Array.isArray(ranked) || ranked.length < 2) return false;
 
@@ -1171,7 +1186,7 @@ const hasAmbiguousTopMatches = (ranked = []) => {
 
   return Math.abs(first - second) <= 15;
 };
-
+// resolve the best matching document 
 const resolveVoiceTargetDoc = ({
   files,
   autoTargetText,
@@ -1202,7 +1217,7 @@ const resolveVoiceTargetDoc = ({
 
   return null;
 };
-
+// show summary result with actions to listen or save to library 
 const openSummaryResult = (doc, summaryText, summaryType = "short") => {
   const cleanSummary = (summaryText || "").trim();
   if (!cleanSummary) return;
@@ -1238,11 +1253,11 @@ const openSummaryResult = (doc, summaryText, summaryType = "short") => {
     { text: "OK", style: "default" },
   ]);
 };
-
+// Wrapper used when summary results come from the voice assistant flow
 const openVoiceSummaryResult = (doc, summaryText, summaryType = "short") => {
   openSummaryResult(doc, summaryText, summaryType);
 };
-
+// Save the current summary directly into the saved summaries library
 const saveSummaryToLibraryDirect = async (doc, summaryText, summaryType = "short") => {
   if (!userId) {
     throw new Error("User session not ready.");
@@ -1268,7 +1283,7 @@ const saveSummaryToLibraryDirect = async (doc, summaryText, summaryType = "short
     keywords: doc.keywords || "",
   });
 };
-
+// Keep saved summaries in sync when a document category changes
 const syncSavedSummaryCategoryForDoc = async (docId, nextCategory) => {
   if (!userId || !docId) return;
 
@@ -1288,7 +1303,7 @@ const syncSavedSummaryCategoryForDoc = async (docId, nextCategory) => {
     console.log("sync saved summary category failed", e);
   }
 };
-
+// Retry summarisation once if the first request fails
 const callSummariseWithRetry = async (doc, mode = "short") => {
   const firstResult = await callSummariseFunction(doc, mode);
 
@@ -1311,8 +1326,8 @@ const callSummariseWithRetry = async (doc, mode = "short") => {
   return await callSummariseFunction(doc, mode);
 };
 
-  /* ─Listen full doc auto extract ─*/
-const onListenDoc = async (doc, options = {}) => {
+  /* ─ listen full document ─ */
+const onListenDoc = async (doc, options = {}) => { // Listen to full document ensures text exists first, then opens or auto-plays TTS
   const autoPlay = options?.autoPlay === true;
 
   try {
@@ -1376,7 +1391,7 @@ const onListenDoc = async (doc, options = {}) => {
   }
 };
   /* ─ delete ─*/
-  const onDelete = (doc) => {
+  const onDelete = (doc) => { // Delete document from Appwrite storage and database
     Alert.alert('Delete document', `Delete "${doc.title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -1395,12 +1410,12 @@ const onListenDoc = async (doc, options = {}) => {
   };
 // folder categorys 
   const CATEGORY_PRESETS = ["work", "study", "legal", "finance", "personal", "history", "other"];
-// converting category text to lc 
+// Normalise category values for consistent filtering and grouping
 const normaliseCategory = (value) => {
   const v = (value || "").trim().toLowerCase();
   return v;
 };
-
+// Build folder cards dynamically based on document counts per category
 const getFolderCards = () => {
   // counts how many docs in each 
   const counts = {};
@@ -1417,7 +1432,7 @@ const getFolderCards = () => {
     const count = counts[c] || 0;
     if (count > 0) cards.push({ key: c, label: c, count });
   }
-// and if needed uncategorise 
+ // Add an Other folder if uncategorised documents exist
   const unc = counts["uncategorised"] || 0;
   if (unc > 0) cards.push({ key: "uncategorised", label: "Other", count: unc });
 
@@ -1425,7 +1440,7 @@ const getFolderCards = () => {
 };
 
 const folderCards = getFolderCards();
-// filter {!!userTypeLabel && (
+// Filter documents by search query and selected folder/category
   const filteredFiles = files
    .filter((doc) => {
     const q = searchQuery.trim().toLowerCase();
@@ -1442,12 +1457,12 @@ const folderCards = getFolderCards();
     if (selectedCategory === "uncategorised") return !c;
     return c === selectedCategory;
   });
-
+// Detect when a selected folder has no documents to show
   const showFolderEmptyState =
   selectedCategory &&
   selectedCategory !== "all" &&
   filteredFiles.length === 0;
-
+// Folder card, shows a category folder and how many documents it contains
   const FolderCard = ({ item }) => {
   const selected = selectedCategory === item.key;
 
@@ -1490,7 +1505,7 @@ const folderCards = getFolderCards();
     </TouchableOpacity>
   );
 };
- // document row card component 
+ // Document item card - displays document details and opens the action menu
 const Item = ({ item }) => {
   const type = deriveType(item);
   const { label, bg } = typeLabelAndColor(type);
@@ -1592,7 +1607,7 @@ const Item = ({ item }) => {
     </View>
   );
 };
-  // play cached parts 
+  // Reuse cached audio parts when available, otherwise generate and cache new TTS audio
   const playWithCache = async ({ doc, mode, variant, text }) => {
   const cache = readTtsCache(doc);
 
@@ -1627,7 +1642,7 @@ const Item = ({ item }) => {
     },
   });
 };
-
+// Open the TTS modal and immediately trigger playback
 const autoPlayTtsForDoc = async (doc, mode, variant, text) => {
   setTtsText(text);
   setTtsContext({ docId: doc.$id, mode, variant });
@@ -1635,7 +1650,7 @@ const autoPlayTtsForDoc = async (doc, mode, variant, text) => {
   setTtsAutoPlayRequested(true);
 };
 
-
+// Main UI for document actions, search, folder view, list view, and feature modals
   return (
     <StyledContainer>
       <StatusBar style="dark" />
@@ -1654,7 +1669,7 @@ const autoPlayTtsForDoc = async (doc, mode, variant, text) => {
        </SubTitle>
 
                 <View
-          style={{
+          style={{ // upload a file or take a photo
             flexDirection: "row",
             marginBottom: 14,
             backgroundColor: "#FFFFFF",
@@ -1701,7 +1716,7 @@ const autoPlayTtsForDoc = async (doc, mode, variant, text) => {
         <Line />
 
    <FlatList
-  data={filteredFiles}
+  data={filteredFiles} // Main documents list, supports refresh, search, folders, and empty states
   keyExtractor={(item) => item.$id}
 renderItem={({ item }) => (
   <View style={{ width: "100%", alignSelf: "stretch" }}>
@@ -1769,7 +1784,7 @@ style={{ flex: 1, width: "100%", alignSelf: "stretch" }}
  ListHeaderComponent={
   <View style={{ width: "100%", alignSelf: "stretch" }}>
    <TextInput
-  value={searchQuery}
+  value={searchQuery} // Search bar for filters documents by title
   onChangeText={setSearchQuery}
   placeholder="Search documents..."
   placeholderTextColor="#9CA3AF"
@@ -1841,7 +1856,7 @@ style={{
 </InnerContainer>
 
 <Modal
-  visible={showUploadModal}
+  visible={showUploadModal} // Upload modal, lets the user review and edit title/category before saving
   transparent
   animationType="fade"
   onRequestClose={closeUploadModal}
@@ -1960,7 +1975,7 @@ style={{
 </Modal>
 
 <Modal
-  visible={menuVisible}
+  visible={menuVisible} // Action menu modal shows available actions for the selected document
   transparent
   animationType="fade"
   onRequestClose={closeMenu}
@@ -2071,7 +2086,7 @@ style={{
 </Modal>
 
 <Modal
-  visible={kwModalVisible}
+  visible={kwModalVisible} // Keywords modal allows manual editing of document keywords
   transparent
   animationType="fade"
   onRequestClose={closeKeywordsModal}
@@ -2161,7 +2176,7 @@ style={{
 </Modal>
 
 <Modal
-  visible={categoryModalVisible}
+  visible={categoryModalVisible} // Category modal lets the user change or set a document category
   transparent
   animationType="fade"
   onRequestClose={closeCategoryModal}
@@ -2294,7 +2309,7 @@ style={{
 </Modal>
 
       <Modal
-        visible={!!summarisingId}
+        visible={!!summarisingId} // Loading modal shown while a summary is being generated
         transparent
         animationType="fade"
         onRequestClose={() => {}}

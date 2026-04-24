@@ -30,57 +30,59 @@ export default function Welcome({
   onOpenProfile,
   navigation,
 }) {
-  
+  // dashboard state 
   const [displayName, setDisplayName] = useState(user?.name || '');
   const [recentDocs, setRecentDocs] = useState([]);
   const [recentSummaries, setRecentSummaries] = useState([]);
-
+  // current user id for database queries 
+  const userId = user?.$id || user?.id;
+// load dashboard data 
     const loadHomeData = useCallback(async () => {
-    try {
-      if (!user?.id) return;
+  try {
+    if (!userId) return;
+// run all 3 for faster  loading
+    const [profileRes, docsRes, savedRes] = await Promise.all([
+      databasesClient.listDocuments(DATABASE_ID, PROFILES_COLLECTION_ID, [
+        Query.equal('userID', userId),
+        Query.limit(1),
+      ]),
+      databasesClient.listDocuments(DATABASE_ID, DOCUMENTS_COLLECTION_ID, [
+        Query.equal('userID', userId),
+        Query.orderDesc('$createdAt'),
+        Query.limit(3),
+      ]),
+      databasesClient.listDocuments(DATABASE_ID, SAVED_ITEMS_COLLECTION_ID, [
+        Query.equal('userID', userId),
+        Query.orderDesc('$createdAt'),
+        Query.limit(3),
+      ]),
+    ]);
+// build display name from profile record
+    const profileDoc = profileRes.documents?.[0];
+    const fullName = profileDoc
+      ? [profileDoc.firstName, profileDoc.lastName].filter(Boolean).join(' ')
+      : (user?.name || '');
 
-      const [profileRes, docsRes, savedRes] = await Promise.all([
-        databasesClient.listDocuments(DATABASE_ID, PROFILES_COLLECTION_ID, [
-          Query.equal('userID', user.id),
-          Query.limit(1),
-        ]),
-        databasesClient.listDocuments(DATABASE_ID, DOCUMENTS_COLLECTION_ID, [
-          Query.equal('userID', user.id),
-          Query.orderDesc('$createdAt'),
-          Query.limit(3),
-        ]),
-        databasesClient.listDocuments(DATABASE_ID, SAVED_ITEMS_COLLECTION_ID, [
-          Query.equal('userID', user.id),
-          Query.orderDesc('$createdAt'),
-          Query.limit(3),
-        ]),
-      ]);
-
-      const profileDoc = profileRes.documents?.[0];
-      const fullName = profileDoc
-        ? [profileDoc.firstName, profileDoc.lastName].filter(Boolean).join(' ')
-        : (user?.name || '');
-
-      setDisplayName(fullName || user?.email || 'User');
-      setRecentDocs(docsRes.documents || []);
-      setRecentSummaries(savedRes.documents || []);
-    } catch {
-      setDisplayName(user?.name || user?.email || 'User');
-      setRecentDocs([]);
-      setRecentSummaries([]);
-    }
-  }, [user?.id, user?.name, user?.email]);
-
+    setDisplayName(fullName || user?.email || 'User');
+    setRecentDocs(docsRes.documents || []);
+    setRecentSummaries(savedRes.documents || []);
+  } catch {
+    setDisplayName(user?.name || user?.email || 'User');
+    setRecentDocs([]);
+    setRecentSummaries([]);
+  }
+}, [userId, user?.name, user?.email]);
+// inittial dashboard load 
   useEffect(() => {
     loadHomeData();
   }, [loadHomeData]);
-
+// refresh dashboard data 
   useFocusEffect(
     useCallback(() => {
       loadHomeData();
     }, [loadHomeData])
   );
-
+// quick action card
   const QuickAction = ({ icon, label, onPress }) => (
   <TouchableOpacity
     onPress={onPress}
@@ -119,7 +121,7 @@ export default function Welcome({
     </Text>
   </TouchableOpacity>
 );
-
+// re usable section wrapper
 const SectionCard = ({ title, icon, children }) => (
   <View
     style={{
@@ -174,9 +176,9 @@ const SectionCard = ({ title, icon, children }) => (
     }}
     showsVerticalScrollIndicator={false}
   >
-    <View style={{ alignItems: "center", marginBottom: 16, width: "100%" }}>
+    <View style={{ alignItems: "center", marginBottom: 16, width: "100%" }}> 
       <View
-        style={{
+        style={{ // top welcome area
           width: 70,
           height: 70,
           borderRadius: 20,
@@ -200,9 +202,9 @@ const SectionCard = ({ title, icon, children }) => (
       </SubTitle>
     </View>
 
-    <SectionCard title="AI Assistant" icon="sparkles-outline">
+    <SectionCard title="AI Assistant" icon="sparkles-outline"> 
       <View
-        style={{
+        style={{ // assistant section
           borderRadius: 16,
           backgroundColor: "#EEF2FF",
           borderWidth: 1,
@@ -243,8 +245,8 @@ const SectionCard = ({ title, icon, children }) => (
 
         <SectionCard title="Quick Actions" icon="flash-outline">
       <View style={{ flexDirection: "row", marginHorizontal: -6 }}>
-        <QuickAction
-          icon="cloud-upload-outline"
+        <QuickAction // quick action section
+          icon="cloud-upload-outline" // start upload flow
           label="Upload File"
           onPress={() =>
             navigation.navigate("Documents", {
@@ -254,13 +256,13 @@ const SectionCard = ({ title, icon, children }) => (
           }
         />
         <QuickAction
-          icon="mic-outline"
+          icon="mic-outline" // into assistant screen
           label="Assistant"
           onPress={() => navigation.navigate("Assistant")}
         />
         <QuickAction
           icon="sparkles-outline"
-          label="Latest Summary"
+          label="Latest Summary" // opens the most recent saved summary in library screen
           onPress={() =>
             navigation.navigate("Library", {
               autoMostRecent: true,
@@ -273,11 +275,17 @@ const SectionCard = ({ title, icon, children }) => (
     </SectionCard>
 
     <SectionCard title="Recent Documents" icon="folder-open-outline">
-      {recentDocs.length > 0 ? (
-        recentDocs.map((doc) => (
+      {recentDocs.length > 0 ? ( // recent doc section
+        recentDocs.map((doc) => ( // render the latest documents from the DB
           <TouchableOpacity
             key={doc.$id}
-            onPress={onOpenDocuments}
+            onPress={() =>
+              navigation.navigate("Documents", {
+                autoSearchText: doc.title || "",
+                autoOpenRecent: true,
+                commandNonce: Date.now(),
+              })
+            }
             activeOpacity={0.88}
             style={{
               paddingVertical: 12,
@@ -297,15 +305,15 @@ const SectionCard = ({ title, icon, children }) => (
        <View style={{ alignItems: "center", paddingVertical: 10 }}>
   <Ionicons name="document-outline" size={26} color="#94A3B8" />
   <Text style={{ color: "#64748B", marginTop: 6 }}>
-    No documents yet
-  </Text>
+    No documents yet 
+  </Text> 
 </View>
       )}
     </SectionCard>
 
     <SectionCard title="Recent Summaries" icon="library-outline">
-      {recentSummaries.length > 0 ? (
-        recentSummaries.map((item) => (
+      {recentSummaries.length > 0 ? ( // recent summary section
+        recentSummaries.map((item) => ( // render the most recent summaries
           <TouchableOpacity
             key={item.$id}
             onPress={() =>
@@ -365,4 +373,3 @@ const SectionCard = ({ title, icon, children }) => (
     </StyledContainer>
   );
 }
-

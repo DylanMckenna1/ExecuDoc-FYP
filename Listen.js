@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { useTtsPlayer } from "../hooks/useTtsPlayer";
 import { Colors } from "../components/styles";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,7 +34,6 @@ const title = route?.params?.title ?? "Library";
 const hasText = typeof text === "string" && text.trim().length > 0;
 
   // Library state 
-  const [me, setMe] = useState(null);
   const [loadingLib, setLoadingLib] = useState(false);
   const [libError, setLibError] = useState("");
   const [items, setItems] = useState([]);
@@ -48,7 +48,6 @@ const hasText = typeof text === "string" && text.trim().length > 0;
     setLibError("");
     try {
       const u = await getCurrentUser();
-      setMe(u);
       const userId = u?.$id || u?.id;
       if (!userId) {
         setItems([]);
@@ -67,11 +66,19 @@ setItems(sorted);
     }
   }
 
-  useEffect(() => {
+useEffect(() => {
   if (!hasText) {
     loadLibrary();
   }
 }, [hasText]);
+
+useFocusEffect(
+  useCallback(() => {
+    if (!hasText) {
+      loadLibrary();
+    }
+  }, [hasText])
+);
 
 useEffect(() => {
   return () => {
