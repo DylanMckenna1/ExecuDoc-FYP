@@ -2,6 +2,7 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import styled from 'styled-components/native';
+import { Ionicons } from '@expo/vector-icons';
 
 import {
   StyledContainer,
@@ -15,32 +16,47 @@ import {
 } from '../components/styles';
 
 const { brand, tertiary, darkLight, secondary } = Colors;
-
+// Public landing screen
 export default function Home({ onLogin, onSignup }) {
   return (
     <StyledContainer>
       <StatusBar style="dark" />
       <InnerContainer>
-
+{/* App branding/logo */}
         <LogoWrap>
           <PageLogo
             resizeMode="contain"
             source={require('../assets/logo.png')}
           />
         </LogoWrap>
-
+{/* Main welcome title */}
         <HeroTitle>Welcome to ExecuDoc</HeroTitle>
-
+{/* the app purpose */}
         <Tagline>
           Secure. Simple. Smart document management.
         </Tagline>
 
-        <Separator />
+        <FeatureRow>
+          <FeatureChip>
+            <Ionicons name="document-text-outline" size={16} color={brand} />
+            <FeatureText>Summarise</FeatureText>
+          </FeatureChip>
+          <FeatureChip>
+            <Ionicons name="mic-outline" size={16} color={brand} />
+            <FeatureText>Voice Assist</FeatureText>
+          </FeatureChip>
+          <FeatureChip>
+            <Ionicons name="volume-high-outline" size={16} color={brand} />
+            <FeatureText>Listen Anywhere</FeatureText>
+          </FeatureChip>
+        </FeatureRow>
 
+        <Separator />
+{/* Navigate to login screen */}
         <PrimaryButton onPress={onLogin}>
           <ButtonText>Login</ButtonText>
         </PrimaryButton>
-
+{/* Navigate to signup screen */}
         <SecondaryButton onPress={onSignup}>
           <SecondaryText>Create an account</SecondaryText>
         </SecondaryButton>
@@ -48,7 +64,7 @@ export default function Home({ onLogin, onSignup }) {
     </StyledContainer>
   );
 }
-
+// styled components 
 const LogoWrap = styled.View`
   width: 100%;
   align-items: center;
@@ -71,7 +87,36 @@ const Tagline = styled.Text`
   text-align: center;
   color: ${darkLight};
   width: 90%;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
+`;
+
+const FeatureRow = styled.View`
+  width: 92%;
+  flex-direction: row;
+  justify-content: space-between;
+  margin-bottom: 18px;
+`;
+
+const FeatureChip = styled.View`
+  flex: 1;
+  margin-horizontal: 4px;
+  padding-vertical: 12px;
+  padding-horizontal: 10px;
+  border-radius: 14px;
+  border-width: 1px;
+  border-color: ${secondary};
+  background-color: #f8faff;
+  align-items: center;
+  justify-content: center;
+`;
+
+const FeatureText = styled.Text`
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  color: ${tertiary};
+  font-weight: 700;
 `;
 
 const Separator = styled(Line)`

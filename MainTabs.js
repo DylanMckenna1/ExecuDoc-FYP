@@ -51,13 +51,24 @@ export default function MainTabs({ user, onLogout }) {
           tabBarActiveTintColor: brand,
           tabBarInactiveTintColor: "#94A3B8",
           tabBarStyle: {
-            height: 64,
-            paddingBottom: 10,
-            paddingTop: 8,
+            height: 74,
+            paddingBottom: 12,
+            paddingTop: 10,
+            backgroundColor: "#FFFFFF",
+            borderTopWidth: 1,
+            borderTopColor: "#E2E8F0",
+            shadowColor: "#0F172A",
+            shadowOpacity: 0.06,
+            shadowRadius: 14,
+            shadowOffset: { width: 0, height: -4 },
+            elevation: 10,
           },
           tabBarLabelStyle: {
             fontSize: 12,
             fontWeight: "700",
+          },
+          tabBarItemStyle: {
+            paddingVertical: 2,
           },
           tabBarIcon: ({ color, size }) => { // icons for correct tab names
             let icon = "home-outline";
