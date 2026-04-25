@@ -1,7 +1,7 @@
 // screens/Login.js
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { Formik } from 'formik';
 import { Octicons, Ionicons } from '@expo/vector-icons';
 
@@ -24,103 +24,96 @@ import {
   ExtraText,
   TextLink,
   TextLinkContent,
-  GoogleButton,
 } from '../components/styles';
 
 const { brand, darkLight } = Colors;
-
-const Login = ({ onSignup, onGoogleSignIn, onLogin }) => {
-  const [hidePassword, setHidePassword] = useState(true);
+// collect credentials, pass to app.js
+  const Login = ({ onSignup, onLogin }) => {
+  const [hidePassword, setHidePassword] = useState(true); // ui state for password visibility and errors
   const [msg, setMsg] = useState('');
 
   return (
     <StyledContainer>
       <StatusBar style="dark" />
-      <InnerContainer>
-        {/* App logo */}
-        <PageLogo
-          resizeMode="contain"
-          source={require('../assets/logo.png')}
-        />
-        <SubTitle>Account Login</SubTitle>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
+      >
+        <InnerContainer>
+          {/* App logo */}
+          <PageLogo
+            resizeMode="contain"
+            source={require('../assets/logo.png')}
+          />
+          <SubTitle>Account Login</SubTitle>
 
-        <Formik
-          initialValues={{ email: '', password: '' }}
-          onSubmit={async (values, actions) => {
-            actions.setSubmitting(true);
-            const email = values.email.trim();
-            const password = values.password;
-            try {
-              setMsg('');
-              await onLogin({ email, password }); // App.js navigates on success
-            } catch (e) {
-              setMsg(e?.message || 'Login failed');
-            } finally {
-              actions.setSubmitting(false);
-            }
-          }}
-        >
-          {({ handleChange, handleBlur, handleSubmit, values, isSubmitting }) => (
-            <StyledFormArea>
-              <MyTextInput
-                label="Email Address"
-                icon="mail"
-                placeholder="Enter your Email"
-                placeholderTextColor={darkLight}
-                onChangeText={handleChange('email')}
-                onBlur={handleBlur('email')}
-                value={values.email}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
+          <Formik // formik handle login form
+            initialValues={{ email: '', password: '' }}
+            onSubmit={async (values, actions) => { // submit login details
+              actions.setSubmitting(true);
+              const email = values.email.trim();
+              const password = values.password;
+              try {
+                setMsg('');
+                await onLogin({ email, password }); // App.js navigates on success
+              } catch (e) {
+                setMsg(e?.message || 'Login failed');
+              } finally {
+                actions.setSubmitting(false);
+              }
+            }}
+          >
+            {({ handleChange, handleBlur, handleSubmit, values, isSubmitting }) => ( // formik rendering block
+              <StyledFormArea>
+                <MyTextInput // email input
+                  label="Email Address"
+                  icon="mail"
+                  placeholder="Enter your email"
+                  placeholderTextColor={darkLight}
+                  onChangeText={handleChange('email')}
+                  onBlur={handleBlur('email')}
+                  value={values.email}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
 
-              <MyTextInput
-                label="Password"
-                icon="lock"
-                placeholder="********"
-                placeholderTextColor={darkLight}
-                onChangeText={handleChange('password')}
-                onBlur={handleBlur('password')}
-                value={values.password}
-                secureTextEntry={hidePassword}
-                isPassword
-                hidePassword={hidePassword}
-                setHidePassword={setHidePassword}
-              />
+                <MyTextInput //password input
+                  label="Password"
+                  icon="lock"
+                  placeholder="********"
+                  placeholderTextColor={darkLight}
+                  onChangeText={handleChange('password')}
+                  onBlur={handleBlur('password')}
+                  value={values.password}
+                  secureTextEntry={hidePassword}
+                  isPassword
+                  hidePassword={hidePassword}
+                  setHidePassword={setHidePassword}
+                />
 
-              {msg ? <MsgBox>{msg}</MsgBox> : <MsgBox>{' '}</MsgBox>}
+                {msg ? <MsgBox>{msg}</MsgBox> : <MsgBox>{' '}</MsgBox>}
 
-              <StyledButton onPress={handleSubmit} disabled={isSubmitting}>
-                <ButtonText>{isSubmitting ? 'Logging in…' : 'Login'}</ButtonText>
-              </StyledButton>
+                <StyledButton onPress={handleSubmit} disabled={isSubmitting}> 
+                  <ButtonText>{isSubmitting ? 'Logging in…' : 'Login'}</ButtonText>
+                </StyledButton>
 
-              <Line />
+                <Line />
 
-              <GoogleButton
-                onPress={() =>
-                  onGoogleSignIn
-                    ? onGoogleSignIn()
-                    : alert('Google Sign-In coming soon')
-                }
-              >
-                <Ionicons name="logo-google" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <ButtonText>Sign in with Google</ButtonText>
-              </GoogleButton>
-
-              <ExtraView>
-                <ExtraText>Don&apos;t have an account already? </ExtraText>
-                <TextLink onPress={onSignup}>
-                  <TextLinkContent>Signup</TextLinkContent>
-                </TextLink>
-              </ExtraView>
-            </StyledFormArea>
-          )}
-        </Formik>
-      </InnerContainer>
+                <ExtraView>
+                  <ExtraText>Don&apos;t have an account already? </ExtraText>
+                  <TextLink onPress={onSignup}>
+                    <TextLinkContent>Signup</TextLinkContent>
+                  </TextLink>
+                </ExtraView>
+              </StyledFormArea>
+            )}
+          </Formik>
+        </InnerContainer>
+      </ScrollView>
     </StyledContainer>
   );
 };
-
+// reusable input component
 const MyTextInput = ({
   label,
   icon,
@@ -130,9 +123,9 @@ const MyTextInput = ({
   ...props
 }) => {
   return (
-    <View>
-      <LeftIcon>
-        <Octicons name={icon} size={30} color={brand} />
+    <View> 
+      <LeftIcon> 
+        <Octicons name={icon} size={30} color={brand} /> 
       </LeftIcon>
 
       <StyledInputLabel>{label}</StyledInputLabel>

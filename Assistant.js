@@ -2,6 +2,7 @@ import { useState } from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { transcribeAudio } from "../services/transcribeVoice";
 
 
@@ -156,7 +157,6 @@ const buildAssistantStatusText = (actions = []) => {
    }
     if (action.type === "listenRecent") return "Listening to document";
     if (action.type === "saveRecentSummary") return "Saving summary to Library";
-    if (action.type === "searchDocuments") return `Searching for ${action.value}`;
     if (action.type === "selectSuggestedDoc") {
     const labels = ["first", "second", "third"];
     const which = labels[action.index] || "selected";
@@ -862,11 +862,6 @@ if (action.type === "listenSavedSummary") {
       documentsParams.autoFilterCategory = action.value;
     }
 
-    if (action.type === "searchDocuments") {
-      targetScreen = "Documents";
-      documentsParams.autoSearchText = action.value;
-    }
-
     if (action.type === "targetDocument") {
   targetScreen = "Documents";
   documentsParams.autoTargetText = action.value;
@@ -987,7 +982,7 @@ if (action.type === "saveRecentSummary") {
 };
 
   return (
-  <View
+  <SafeAreaView
     style={{
       flex: 1,
       backgroundColor: "#F8FAFC",
@@ -1163,6 +1158,6 @@ if (action.type === "saveRecentSummary") {
   </View>
 )}
 </View>
-    </View>
+    </SafeAreaView>
   );
 }
