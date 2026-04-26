@@ -73,7 +73,7 @@ export const StyledTextInput = styled.TextInput`
   background-color: ${secondary};
   padding: 15px;
   padding-left: 55px;
-  padding-right: 72px;
+  padding-right: 132px;
   border-radius: 12px;
   font-size: 16px;
   height: 60px;
@@ -97,8 +97,12 @@ export const LeftIcon = styled.View`
 `;
 
 export const RightIcon = styled.TouchableOpacity`
-  right: 18px;
+  right: 46px;
   top: 38px;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
   position: absolute;
   z-index: 1;
 `;
@@ -172,4 +176,3 @@ export const Card = styled.View`
   shadow-radius: 10px;
   elevation: 2;
 `;
-
