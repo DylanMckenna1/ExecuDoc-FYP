@@ -123,7 +123,8 @@ useEffect(() => {
     route?.params?.autoMostRecent === true ||
     route?.params?.autoOpenFirstMatch === true ||
     route?.params?.autoPlayFirstMatch === true ||
-    !!route?.params?.autoSearchText;
+    !!route?.params?.autoSearchText ||
+    !!route?.params?.autoSummaryType;
 
   if (!hasVoiceNavigation) return;
 
@@ -134,20 +135,28 @@ useEffect(() => {
   route?.params?.autoOpenFirstMatch,
   route?.params?.autoPlayFirstMatch,
   route?.params?.autoSearchText,
+  route?.params?.autoSummaryType,
 ]);
 
 useEffect(() => {
   const autoSearchText = route?.params?.autoSearchText || "";
   const autoOpenFirstMatch = route?.params?.autoOpenFirstMatch === true;
   const autoPlayFirstMatch = route?.params?.autoPlayFirstMatch === true;
+  const autoSummaryType = route?.params?.autoSummaryType || "";
 
   if (!autoOpenFirstMatch && !autoSearchText && !autoPlayFirstMatch) return;
   if (!items || items.length === 0) return;
 
-  const query = normaliseVoiceSearch(autoSearchText);
+  const query = normaliseLibraryVoiceQuery(autoSearchText);
+  const requestedSummaryType = normaliseVoiceSearch(autoSummaryType);
+  const candidateItems = requestedSummaryType
+    ? items.filter(
+        (item) => normaliseVoiceSearch(item?.summaryType) === requestedSummaryType
+      )
+    : items;
 
   if ((autoOpenFirstMatch || autoPlayFirstMatch) && !query) {
-  const firstItem = items[0];
+  const firstItem = candidateItems[0];
   if (firstItem?.summaryText) {
     setCurrentItem(firstItem);
     setLocalText(firstItem.summaryText);
@@ -164,16 +173,18 @@ useEffect(() => {
     autoSearchText: "",
     autoOpenFirstMatch: false,
     autoPlayFirstMatch: false,
+    autoSummaryType: "",
   });
   return;
 }
 
-  const ranked = items
+  const ranked = candidateItems
     .map((item) => {
       const title = normaliseVoiceSearch(item?.title);
       const summaryText = normaliseVoiceSearch(item?.summaryText);
       const keywords = normaliseVoiceSearch(item?.keywords);
       const category = normaliseVoiceSearch(item?.category);
+      const summaryType = normaliseVoiceSearch(item?.summaryType);
 
       let score = 0;
 
@@ -192,6 +203,7 @@ useEffect(() => {
       if (summaryText.includes(query)) score += 20;
       if (keywords.includes(query)) score += 15;
       if (category.includes(query)) score += 10;
+      if (requestedSummaryType && summaryType === requestedSummaryType) score += 80;
 
       return { item, score };
     })
@@ -215,11 +227,17 @@ if ((autoOpenFirstMatch || autoPlayFirstMatch) && bestMatch && bestScore >= 35 &
     autoSearchText: "",
     autoOpenFirstMatch: false,
     autoPlayFirstMatch: false,
+    autoSummaryType: "",
   });
   return;
 }
    if (autoSearchText && (autoOpenFirstMatch || autoPlayFirstMatch)) {
-    Alert.alert("No exact match found", "I couldn’t find a matching saved summary.");
+    Alert.alert(
+      "No exact match found",
+      requestedSummaryType
+        ? `I couldn’t find a matching ${requestedSummaryType} saved summary.`
+        : "I couldn’t find a matching saved summary."
+    );
   }
 
   setSearchQuery(autoSearchText);
@@ -228,11 +246,13 @@ if ((autoOpenFirstMatch || autoPlayFirstMatch) && bestMatch && bestScore >= 35 &
     autoSearchText: "",
     autoOpenFirstMatch: false,
     autoPlayFirstMatch: false,
+    autoSummaryType: "",
   });
 }, [
   route?.params?.autoPlayFirstMatch,
   route?.params?.autoSearchText,
   route?.params?.autoOpenFirstMatch,
+  route?.params?.autoSummaryType,
   items,
   hasText,
   navigation,
@@ -253,6 +273,15 @@ if ((autoOpenFirstMatch || autoPlayFirstMatch) && bestMatch && bestScore >= 35 &
   typeof value === "string"
     ? value.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim()
     : "";
+
+  const normaliseLibraryVoiceQuery = (value) =>
+    normaliseVoiceSearch(value)
+      .replace(/\biii\b/g, "3")
+      .replace(/\bii\b/g, "2")
+      .replace(/\biv\b/g, "4")
+      .replace(/\bthe\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
   
   const norm = (v) => (typeof v === "string" ? v.toLowerCase().trim() : "");
 // search and filter

@@ -51,6 +51,10 @@ const [actionText, setActionText] = useState("");
     setStatus("transcribing");
 //Stop the recording abnd get the file Uri
     await recording.stopAndUnloadAsync();
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+    });
     const uri = recording.getURI();
 // clear current recording from state
     setRecording(null);
@@ -77,6 +81,12 @@ const [actionText, setActionText] = useState("");
 
   } catch (err) {
     console.log("stop recording error", err);
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+    } catch {}
     setTranscript("Something went wrong. Please try again.");
     setStatus("idle");
     setRecording(null);
@@ -180,18 +190,44 @@ const extractTargetText = (command) => {
   if (!text) return "";
 
    const patterns = [
+  /^open\s+(?:the\s+)?detailed\s+saved\s+summary\s+of\s+(.+)$/,
+  /^open\s+(?:the\s+)?short\s+saved\s+summary\s+of\s+(.+)$/,
   /^open\s+(?:the\s+)?saved\s+summary\s+of\s+(.+)$/,
+  /^listen\s+to\s+(?:the\s+)?detailed\s+saved\s+summary\s+of\s+(.+)$/,
+  /^listen\s+to\s+(?:the\s+)?short\s+saved\s+summary\s+of\s+(.+)$/,
   /^listen\s+to\s+(?:the\s+)?saved\s+summary\s+of\s+(.+)$/,
+  /^play\s+(?:the\s+)?detailed\s+saved\s+summary\s+of\s+(.+)$/,
+  /^play\s+(?:the\s+)?short\s+saved\s+summary\s+of\s+(.+)$/,
   /^play\s+(?:the\s+)?saved\s+summary\s+of\s+(.+)$/,
+  /^open\s+(.+?)\s+detailed\s+saved\s+summary$/,
+  /^open\s+(.+?)\s+short\s+saved\s+summary$/,
   /^open\s+(.+?)\s+saved\s+summary$/,
+  /^listen\s+to\s+(.+?)\s+detailed\s+saved\s+summary$/,
+  /^listen\s+to\s+(.+?)\s+short\s+saved\s+summary$/,
   /^listen\s+to\s+(.+?)\s+saved\s+summary$/,
+  /^play\s+(.+?)\s+detailed\s+saved\s+summary$/,
+  /^play\s+(.+?)\s+short\s+saved\s+summary$/,
   /^play\s+(.+?)\s+saved\s+summary$/,
+  /^open\s+(.+?)\s+detailed\s+summary\s+in\s+library$/,
+  /^open\s+(.+?)\s+short\s+summary\s+in\s+library$/,
   /^open\s+(.+?)\s+summary\s+in\s+library$/,
+  /^listen\s+to\s+(.+?)\s+detailed\s+summary\s+in\s+library$/,
+  /^listen\s+to\s+(.+?)\s+short\s+summary\s+in\s+library$/,
   /^listen\s+to\s+(.+?)\s+summary\s+in\s+library$/,
+  /^play\s+(.+?)\s+detailed\s+summary\s+in\s+library$/,
+  /^play\s+(.+?)\s+short\s+summary\s+in\s+library$/,
   /^play\s+(.+?)\s+summary\s+in\s+library$/,
+  /^open\s+(?:the\s+)?detailed\s+summary\s+of\s+(.+)$/,
+  /^open\s+(?:the\s+)?short\s+summary\s+of\s+(.+)$/,
   /^open\s+(?:the\s+)?summary\s+of\s+(.+)$/,
+  /^listen\s+to\s+(?:the\s+)?detailed\s+summary\s+of\s+(.+)$/,
+  /^listen\s+to\s+(?:the\s+)?short\s+summary\s+of\s+(.+)$/,
   /^listen\s+to\s+(?:the\s+)?summary\s+of\s+(.+)$/,
+  /^play\s+(?:the\s+)?detailed\s+summary\s+of\s+(.+)$/,
+  /^play\s+(?:the\s+)?short\s+summary\s+of\s+(.+)$/,
   /^play\s+(?:the\s+)?summary\s+of\s+(.+)$/,
+  /^save\s+(?:the\s+)?detailed\s+summary\s+of\s+(.+?)(?:\s+to\s+(?:the\s+)?library)?$/,
+  /^save\s+(?:the\s+)?short\s+summary\s+of\s+(.+?)(?:\s+to\s+(?:the\s+)?library)?$/,
   /^save\s+(?:the\s+)?summary\s+of\s+(.+?)(?:\s+to\s+(?:the\s+)?library)?$/,
   /^open\s+(?:file\s+|document\s+)?(.+)$/,
   /^find\s+(.+)$/,
@@ -207,6 +243,7 @@ const extractTargetText = (command) => {
     if (match?.[1]) {
          return match[1]
         .replace(/\b(it|this|that)\b/g, "")
+        .replace(/\b(the|short|detailed|brief)\b/g, "")
         .replace(/\b(?:in library|and library|saved summary|summary)\b/g, "")
         .replace(/\s+/g, " ")
         .trim();
@@ -239,6 +276,7 @@ const wantsDetailedSummary = (command) => {
   const text = normaliseVoiceText(command);
 
   return (
+    (text.includes("detailed") && text.includes("summary")) ||
     text.includes("detailed summary") ||
     text.includes("summary in detail") ||
     text.includes("summarise in detail") ||
@@ -252,6 +290,26 @@ const wantsDetailedSummary = (command) => {
     text.includes("in detailed mode") ||
     /\bin detail\b/.test(text)
   );
+};
+
+const wantsShortSummary = (command) => {
+  const text = normaliseVoiceText(command);
+
+  return (
+    (text.includes("short") && text.includes("summary")) ||
+    (text.includes("brief") && text.includes("summary")) ||
+    text.includes("short summary") ||
+    text.includes("brief summary") ||
+    text.includes("summary in short mode") ||
+    text.includes("in short mode") ||
+    text.includes("short mode")
+  );
+};
+
+const getRequestedSummaryType = (command) => {
+  if (wantsDetailedSummary(command)) return "detailed";
+  if (wantsShortSummary(command)) return "short";
+  return "";
 };
 
 const getCommandAction = (text) => {
@@ -356,7 +414,7 @@ const getCommandAction = (text) => {
     "listen to latest save summary",
   ])
 ) {
-  return { type: "playLatestSummary" };
+  return { type: "playLatestSummary", summaryType: getRequestedSummaryType(command) };
 }
 
   if (
@@ -366,7 +424,7 @@ const getCommandAction = (text) => {
     "open a saved summary",
   ])
 ) {
-  return { type: "openFirstSavedSummary" };
+  return { type: "openFirstSavedSummary", summaryType: getRequestedSummaryType(command) };
 }
 
 if (
@@ -377,7 +435,7 @@ if (
     "play the saved summary",
   ])
 ) {
-  return { type: "listenSavedSummary" };
+  return { type: "listenSavedSummary", summaryType: getRequestedSummaryType(command) };
 }
 
   if (
@@ -535,37 +593,77 @@ if (
 
      if (
   (command.startsWith("open saved summary of ") ||
+    command.startsWith("open short saved summary of ") ||
+    command.startsWith("open detailed saved summary of ") ||
     command.startsWith("open the saved summary of ") ||
+    command.startsWith("open the short saved summary of ") ||
+    command.startsWith("open the detailed saved summary of ") ||
+    command.startsWith("open short summary of ") ||
+    command.startsWith("open detailed summary of ") ||
+    command.startsWith("open the short summary of ") ||
+    command.startsWith("open the detailed summary of ") ||
     command.match(/^open .+ saved summary$/) ||
     command.match(/^open .+ summary in library$/) ||
     command.match(/^open .+ summary$/)) &&
   targetText &&
   !command.startsWith("open the summary of ")
 ) {
-  return { type: "savedSummaryTarget", value: targetText, open: true };
+  return {
+    type: "savedSummaryTarget",
+    value: targetText,
+    open: true,
+    summaryType: getRequestedSummaryType(command),
+  };
 }
 
 if (
   (command.startsWith("listen to saved summary of ") ||
+    command.startsWith("listen to short saved summary of ") ||
+    command.startsWith("listen to detailed saved summary of ") ||
     command.startsWith("listen to the saved summary of ") ||
+    command.startsWith("listen to the short saved summary of ") ||
+    command.startsWith("listen to the detailed saved summary of ") ||
+    command.startsWith("listen to short summary of ") ||
+    command.startsWith("listen to detailed summary of ") ||
+    command.startsWith("listen to the short summary of ") ||
+    command.startsWith("listen to the detailed summary of ") ||
     command.match(/^listen to .+ saved summary$/) ||
     command.match(/^listen to .+ summary in library$/) ||
     command.match(/^listen to .+ summary$/)) &&
   targetText
 ) {
-  return { type: "savedSummaryTarget", value: targetText, listen: true, play: true };
+  return {
+    type: "savedSummaryTarget",
+    value: targetText,
+    listen: true,
+    play: true,
+    summaryType: getRequestedSummaryType(command),
+  };
 }
 
 if (
   (command.startsWith("play saved summary of ") ||
+    command.startsWith("play short saved summary of ") ||
+    command.startsWith("play detailed saved summary of ") ||
     command.startsWith("play the saved summary of ") ||
+    command.startsWith("play the short saved summary of ") ||
+    command.startsWith("play the detailed saved summary of ") ||
+    command.startsWith("play short summary of ") ||
+    command.startsWith("play detailed summary of ") ||
+    command.startsWith("play the short summary of ") ||
+    command.startsWith("play the detailed summary of ") ||
     command.match(/^play .+ saved summary$/) ||
     command.match(/^play .+ summary$/) ||
     command.match(/^play .+ summary in library$/)) &&
   targetText &&
   !/\b(latest|newest|recent)\b/.test(targetText)
 ) {
-  return { type: "savedSummaryTarget", value: targetText, play: true };
+  return {
+    type: "savedSummaryTarget",
+    value: targetText,
+    play: true,
+    summaryType: getRequestedSummaryType(command),
+  };
 }
 
   if (
@@ -628,7 +726,7 @@ if (
     return { type: "summaryTarget", value: targetText, save: true };
   }
 
-   if (ordinalIndex !== null) {
+  if (ordinalIndex !== null) {
   if (command.includes("file in work folder")) {
     return { type: "selectFolderDoc", category: "work", index: ordinalIndex, open: true };
   }
@@ -658,7 +756,12 @@ if (
   }
 
   if (command.startsWith("summarise ") || command.startsWith("summarize ")) {
-    return { type: "selectSuggestedDoc", index: ordinalIndex, summarise: true };
+    return {
+      type: "selectSuggestedDoc",
+      index: ordinalIndex,
+      summarise: true,
+      summaryMode: wantsDetailedSummary(command) ? "detailed" : "short",
+    };
   }
 
   if (command.startsWith("listen to ") || command.startsWith("read out ")) {
@@ -781,11 +884,12 @@ const documentsParams = {
   commandNonce: Date.now(),
 };
 
-  const libraryParams = {
+const libraryParams = {
   autoMostRecent: false,
   autoSearchText: "",
   autoOpenFirstMatch: false,
   autoPlayFirstMatch: false,
+  autoSummaryType: "",
   commandNonce: Date.now(),
 };
   
@@ -823,6 +927,7 @@ if (action.type === "playLatestSummary") {
     ...libraryParams,
     autoMostRecent: true,
     autoPlayFirstMatch: true,
+    autoSummaryType: action.summaryType || "",
     commandNonce: Date.now(),
   };
 }
@@ -832,6 +937,7 @@ if (action.type === "openFirstSavedSummary") {
   targetParams = {
     ...libraryParams,
     autoOpenFirstMatch: true,
+    autoSummaryType: action.summaryType || "",
     commandNonce: Date.now(),
   };
 }
@@ -842,6 +948,7 @@ if (action.type === "listenSavedSummary") {
     ...libraryParams,
     autoOpenFirstMatch: true,
     autoPlayFirstMatch: true,
+    autoSummaryType: action.summaryType || "",
     commandNonce: Date.now(),
   };
 }
@@ -853,6 +960,7 @@ if (action.type === "listenSavedSummary") {
     autoSearchText: action.value,
     autoOpenFirstMatch: true,
     autoPlayFirstMatch: !!action.listen || !!action.play,
+    autoSummaryType: action.summaryType || "",
     commandNonce: Date.now(),
   };
 }
@@ -909,6 +1017,7 @@ if (action.type === "listenSavedSummary") {
 
       if (action.summarise) {
         documentsParams.autoSummariseRecent = true;
+        documentsParams.autoSummaryMode = action.summaryMode || "short";
       }
 
       if (action.listen) {

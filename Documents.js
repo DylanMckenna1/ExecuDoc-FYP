@@ -189,7 +189,7 @@ const onAutoTag = async (doc, options = {}) => {
 }
 // get latest doc by iD and calls tagFunction latest doc
     const latestDoc = await getDocumentById(docId);
-    await callTagFunction(latestDoc);
+    await callTagFunction(latestDoc, { forceCategory: options?.forceCategory === true });
 // reloads the list 
     await load();
 
@@ -269,7 +269,7 @@ const handleMenuAction = async (action) => {
   if (action === "open") onOpen(doc);
   if (action === "summarise") openSummaryPicker(doc);
   if (action === "listen") onListenDoc(doc);
-  if (action === "categorise") onAutoTag(doc);
+  if (action === "categorise") onAutoTag(doc, { forceCategory: true });
   if (action === "category") openCategoryModalForDoc(doc);
   if (action === "keywords") openKeywordsModal(doc);
   if (action === "delete") onDelete(doc);
@@ -569,34 +569,41 @@ useEffect(() => {
       autoListenSummaryTarget ||
       autoSaveSummaryTarget;
 
-      // ensure text exists before voice summary
-let text = (workingDoc.textContent || "").trim();
+    const needsDocumentText =
+      autoSummariseRecent ||
+      needsSummaryTargetAction ||
+      autoListenRecent;
 
-if (!text) {
-  const extractResult = await callExtractTextFunction(workingDoc);
+    let text = (workingDoc.textContent || "").trim();
 
-  text = (
-    extractResult?.textContent ||
-    extractResult?.extractedText ||
-    extractResult?.text ||
-    ""
-  ).trim();
+    if (needsDocumentText && !text) {
+      const extractResult = await callExtractTextFunction(workingDoc);
 
-  if (!text) {
-    const freshDocs = await listUserDocs(userId);
-    setFiles(freshDocs);
+      text = (
+        extractResult?.textContent ||
+        extractResult?.extractedText ||
+        extractResult?.text ||
+        ""
+      ).trim();
 
-    const refreshed = freshDocs.find((d) => d.$id === workingDoc.$id);
-    text = (refreshed?.textContent || "").trim();
+      if (!text) {
+        const freshDocs = await listUserDocs(userId);
+        setFiles(freshDocs);
 
-    if (!text) {
-      Alert.alert("No text found", "Cannot summarise this document.");
-      return;
+        const refreshed = freshDocs.find((d) => d.$id === workingDoc.$id);
+        text = (refreshed?.textContent || "").trim();
+
+        if (!text) {
+          Alert.alert(
+            "Document unavailable",
+            "This file opened successfully, but its full text could not be prepared for advanced actions."
+          );
+          return;
+        }
+
+        workingDoc = refreshed;
+      }
     }
-
-    workingDoc = refreshed;
-  }
-}
 
     if (autoSummariseRecent || needsSummaryTargetAction) {
       if (!summaryText) {
@@ -646,7 +653,7 @@ if (!text) {
         }
       }
 
-     if (autoSummariseRecent && summaryText) {
+     if (autoSummariseRecent && summaryText && !autoSaveRecentSummary && !autoSaveSummaryTarget) {
   openVoiceSummaryResult(
     workingDoc,
     summaryText,
@@ -1244,7 +1251,6 @@ const openSummaryResult = (doc, summaryText, summaryType = "short") => {
       onPress: async () => {
         try {
           await saveSummaryToLibraryDirect(doc, cleanSummary, summaryType);
-          Alert.alert("Saved", `${isDetailed ? "Detailed" : "Short"} summary saved to your Library.`);
         } catch (e) {
           Alert.alert("Save failed", e?.message || "Could not save summary.");
         }
@@ -2270,10 +2276,27 @@ style={{
                   ? categoryCustom.trim().toLowerCase()
                   : categoryChoice;
 
-              await updateDocFields(docId, { category: next || null });
-               await syncSavedSummaryCategoryForDoc(docId, next || "");
-               closeCategoryModal();
-               await load();
+              if (!next) {
+                Alert.alert("Category required", "Please choose or type a category.");
+                return;
+              }
+
+              await updateDocFields(docId, { category: next });
+              await syncSavedSummaryCategoryForDoc(docId, next);
+
+              setFiles((prev) =>
+                prev.map((item) =>
+                  item.$id === docId
+                    ? {
+                        ...item,
+                        category: next,
+                      }
+                    : item
+                )
+              );
+
+              closeCategoryModal();
+              await load();
             } catch {
               Alert.alert("Update failed", "Could not save category.");
             }
@@ -2378,6 +2401,79 @@ style={{
     Please wait while ExecuDoc prepares your summary. Larger documents can take a few seconds.
   </Text>
 </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!taggingId}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <View
+            style={{
+              width: "100%",
+              maxWidth: 330,
+              backgroundColor: "#fff",
+              borderRadius: 22,
+              padding: 22,
+              borderWidth: 1,
+              borderColor: "#E5E7EB",
+              alignItems: "center",
+              shadowColor: "#000",
+              shadowOpacity: 0.08,
+              shadowRadius: 14,
+              shadowOffset: { width: 0, height: 8 },
+              elevation: 4,
+            }}
+          >
+            <View
+              style={{
+                width: 62,
+                height: 62,
+                borderRadius: 20,
+                backgroundColor: "rgba(79,70,229,0.10)",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 14,
+              }}
+            >
+              <ActivityIndicator size="large" color={brand} />
+            </View>
+
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "900",
+                color: "#0F172A",
+                textAlign: "center",
+              }}
+            >
+              Categorising document
+            </Text>
+
+            <Text
+              style={{
+                marginTop: 8,
+                fontSize: 13,
+                color: "#64748B",
+                textAlign: "center",
+                lineHeight: 20,
+                maxWidth: 250,
+              }}
+            >
+              Please wait while ExecuDoc updates the category and keywords for this file.
+            </Text>
+          </View>
         </View>
       </Modal>
 
