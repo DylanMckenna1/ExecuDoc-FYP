@@ -50,6 +50,13 @@ function chunkText(text, maxChars = 12000) {
   return chunks;
 }
 
+function clampSummaryText(summary, maxChars = Number(process.env.SUMMARY_MAX_CHARS || 5250)) {
+  const cleaned = (summary || "").trim();
+  if (!cleaned) return { summary: "", truncated: false };
+  if (cleaned.length <= maxChars) return { summary: cleaned, truncated: false };
+  return { summary: cleaned.slice(0, maxChars).trim(), truncated: true };
+}
+
 async function summariseText(openai, fullText, mode = "short") {
   const cleaned = (fullText || "") // normalise formatting, remove messy spacing and prep the text for summarisation
     .replace(/\r/g, "")  
@@ -287,12 +294,14 @@ export default async ({ req, res, log, error }) => {
 if (storedText) {
   log?.(`Using stored textContent from document. Chars: ${storedText.length}`);
   const { summary, usedChars } = await summariseText(openai, storedText, mode);
+  const { summary: finalSummary, truncated } = clampSummaryText(summary);
   return res.json({
     ok: true,
     mimeType: mimeType || "",
     textChars: usedChars,
     source: "textContent",
-    summary,
+    summary: finalSummary,
+    truncated,
   });
 }
 
@@ -340,7 +349,8 @@ const buffer = dl.buffer;
         );
       }
       const { summary, usedChars } = await summariseText(openai, extractedText, mode);
-      return res.json({ ok: true, mimeType, textChars: usedChars, summary });
+      const { summary: finalSummary, truncated } = clampSummaryText(summary);
+      return res.json({ ok: true, mimeType, textChars: usedChars, summary: finalSummary, truncated });
     }
 
     if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") { // docX
@@ -349,7 +359,8 @@ const buffer = dl.buffer;
         return res.json({ ok: false, error: "No extractable text found in DOCX.", mimeType }, 400);
       }
       const { summary, usedChars } = await summariseText(openai, extractedText, mode);
-      return res.json({ ok: true, mimeType, textChars: usedChars, summary });
+      const { summary: finalSummary, truncated } = clampSummaryText(summary);
+      return res.json({ ok: true, mimeType, textChars: usedChars, summary: finalSummary, truncated });
     }
 
     if (mimeType === "text/plain") { //text/plain
@@ -358,7 +369,8 @@ const buffer = dl.buffer;
         return res.json({ ok: false, error: "No extractable text found in text file.", mimeType }, 400);
       }
       const { summary, usedChars } = await summariseText(openai, extractedText, mode);
-      return res.json({ ok: true, mimeType, textChars: usedChars, summary });
+      const { summary: finalSummary, truncated } = clampSummaryText(summary);
+      return res.json({ ok: true, mimeType, textChars: usedChars, summary: finalSummary, truncated });
     }
 
     if (mimeType.startsWith("image/")) { // image
@@ -366,7 +378,8 @@ const buffer = dl.buffer;
       if (!summary) {
         return res.json({ ok: false, error: "No summary returned for image.", mimeType }, 500);
       }
-      return res.json({ ok: true, mimeType, textChars: 0, summary });
+      const { summary: finalSummary, truncated } = clampSummaryText(summary);
+      return res.json({ ok: true, mimeType, textChars: 0, summary: finalSummary, truncated });
     }
 
     return res.json(
@@ -385,4 +398,3 @@ const buffer = dl.buffer;
     return res.json({ ok: false, error: String(e?.message || e) }, 500);
   }
 };
-

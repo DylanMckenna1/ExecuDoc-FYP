@@ -1,5 +1,10 @@
 {
-  "name": "tts-generate",
+  "name": "transcribeVoice",
   "version": "1.0.0",
-  "type": "module"
+  "type": "module",
+  "main": "src/main.js",
+  "dependencies": {
+    "node-appwrite": "^14.0.1",
+    "openai": "^4.104.0"
+  }
 }

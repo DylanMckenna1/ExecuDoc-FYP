@@ -1,185 +1,105 @@
-//stores openai tts endpoint
-const OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech";
+import { Client, Storage } from "node-appwrite"; // come from appwrite node sdk
+import OpenAI, { toFile } from "openai"; // converts buffer into tofile object
 
-// conver json into javascript object
-function safeJsonParse(str) {
+// environment variables
+const {
+  APPWRITE_ENDPOINT, // appwrite url
+  APPWRITE_PROJECT_ID, // Appwrite project
+  APPWRITE_API_KEY, // authenticate backend access to storage
+  BUCKET_ID, // identify voice recording bucket
+  OPENAI_API_KEY, // authenticate calls to openAI transcription
+} = process.env;
+
+export default async ({ req, res, error }) => {
   try {
-    return JSON.parse(str);
-  } catch {
-    return null;
-  }
-}
-// convert audio to buffer
-function toBase64(buffer) {
-  return Buffer.from(buffer).toString("base64");
-}
-// generates speech audio 
-async function openaiTts({ apiKey, text, voice = "alloy" }) { // receives apiKey,  text and voice
-  const r = await fetch(OPENAI_TTS_URL, { // http request to OpenAI
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ // what is being sent
-      model: "gpt-4o-mini-tts",
-      voice,
-      input: text, 
-      format: "mp3",
-    }),
-  });
-// if openAi responds with an error
-  if (!r.ok) {
-    const errText = await r.text().catch(() => ""); // read response text and return error message
-    throw new Error(`OpenAI TTS failed: ${r.status} ${r.statusText} :: ${errText}`); // throw upwards
-  }
-// return mp3 bytes
-  const arrayBuf = await r.arrayBuffer(); // reads returned audio as buffer
-  return Buffer.from(arrayBuf);
-}
-// upload mp3 audio to appwrite storage 
-async function uploadToAppwriteStorage({
-  endpoint,
-  projectId,
-  apiKey,
-  bucketId,
-  fileName,
-  bytes,
-  userId,
-}) {
-  //builds appwrites REST upload endpoint
-  const url = `${endpoint}/storage/buckets/${bucketId}/files`;
-//create upload request
-  const form = new FormData();
-// tell Appwrite to generate an ID 
-  form.append("fileId", "unique()");
-
-  // permissions 
-  // If userId from the app - this makes the file readable by that user only
-  if (userId) {
-    form.append("permissions[]", `read("user:${userId}")`);
-    form.append("permissions[]", `update("user:${userId}")`);
-    form.append("permissions[]", `delete("user:${userId}")`);
-  } else {
-    // fallback
-    form.append("permissions[]", `read("any")`);
-  }
-// convert bytes to blob 
-  const blob = new Blob([bytes], { type: "audio/mpeg" });
-  form.append("file", blob, fileName); // can now be uploaded as a file
-// sends file upload request to Appwrite storage
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      "X-Appwrite-Project": projectId,
-      "X-Appwrite-Key": apiKey,
-    },
-    body: form,
-  });
-// if upload fails throw error
-  const text = await r.text().catch(() => "");
-  if (!r.ok) {
-    throw new Error(`Storage upload failed: ${r.status} ${r.statusText} :: ${text}`);
-  }
-// if succeeds return json response and file metadata
-  const json = safeJsonParse(text) || {};
-  return json;
-}
-
-// Appwrite function entry point
-export default async (context) => {
-  const { req, res, log, error } = context; // recieves 
-
-  try {
-  // parse incoming body
-    const raw = req?.bodyRaw ?? req?.body ?? "";
-    const body = typeof raw === "string" ? (safeJsonParse(raw) || {}) : (raw || {});
-
-    log("Incoming body keys:", Object.keys(body || {}));
-
-    // Health check
-    if (body?.ping === true) {
-      return res.json({ ok: true, pong: true });
+    const missing = [ // check for missing env vars
+      !APPWRITE_ENDPOINT && "APPWRITE_ENDPOINT",
+      !APPWRITE_PROJECT_ID && "APPWRITE_PROJECT_ID",
+      !APPWRITE_API_KEY && "APPWRITE_API_KEY",
+      !BUCKET_ID && "BUCKET_ID",
+      !OPENAI_API_KEY && "OPENAI_API_KEY",
+    ].filter(Boolean);
+ // if missing fail early to prevent later failures
+    if (missing.length) {
+      return res.json(
+        { ok: false, error: `Missing env vars: ${missing.join(", ")}` },
+        400
+      );
     }
-
-    // read tts request fields
-    const doTTS = body?.doTTS === true;
-    const text = body?.text;
-//handle non tts requests
-    if (!doTTS) {
-      return res.json({
-        ok: true,
-        message: "No doTTS flag set. Send { text: '...', doTTS: true } to generate speech.",
-        received: body,
-      });
+// Parse request body so parse the incoming json
+    let body = {};
+    try {
+      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+    } catch {
+      body = {};
     }
-// validate text input 
-    if (!text || typeof text !== "string" || !text.trim()) {
-      return res.json({ ok: false, error: "Missing or invalid 'text'." }, 400);
+    const jwt =
+      (req.headers?.["x-appwrite-jwt"] ||
+        req.headers?.["X-Appwrite-JWT"] ||
+        req.headers?.["x-appwrite-user-jwt"] ||
+        "")
+        .toString()
+        .trim();
+//Extract fileID
+    const fileId = body.fileId;
+    if (!fileId) {
+      return res.json({ ok: false, error: "Missing fileId" }, 400);
     }
-//validate openAI api key 
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY; //checks that the function can call openai
-    if (!OPENAI_API_KEY) {
-      return res.json({ ok: false, error: "OPENAI_API_KEY env var missing." }, 500);
+// create appwrite client 
+    const client = new Client()
+      .setEndpoint(APPWRITE_ENDPOINT) //connect to appwrite using the node sdk 
+      .setProject(APPWRITE_PROJECT_ID);
+
+    if (jwt) {
+      client.setJWT(jwt);
+    } else {
+      client.setKey(APPWRITE_API_KEY);
     }
+// storage access 
+    const storage = new Storage(client); 
+    const fileData = await storage.getFileDownload(BUCKET_ID, fileId); // download file using fileid
 
-    // Generate MP3 bytes
-    log("Calling OpenAI TTS...");
-    const mp3Bytes = await openaiTts({ //sends text to openai
-      apiKey: OPENAI_API_KEY,
-      text,
-      voice: body?.voice || "alloy",
-    });// get mp3bytes back and log audio size
-    log("OpenAI TTS success. Bytes:", mp3Bytes.length); 
-
-    // read appwrite env vars to check appwrite config to upload to storage
-    const endpoint = process.env.APPWRITE_ENDPOINT;
-    const projectId = process.env.APPWRITE_PROJECT_ID;
-    const apiKey = process.env.APPWRITE_API_KEY;
-    const bucketId = process.env.BUCKET_ID;
-// if upload is possible
-    const shouldUpload = Boolean(endpoint && projectId && apiKey && bucketId);
-// upload mp3 to storage bucket
-    if (shouldUpload) {
-      log("Uploading MP3 to Appwrite Storage...");
-      const uploadResult = await uploadToAppwriteStorage({
-        endpoint,
-        projectId,
-        apiKey,
-        bucketId,
-        fileName: `tts-${Date.now()}.mp3`, // helps make filenames unique
-        bytes: mp3Bytes,
-        userId: body?.userId, // pass from app for per-user permissions
-      });
-// return uploaded file 
-      return res.json({
-        ok: true,
-        uploaded: true,
-        bucketId,
-        fileId: uploadResult?.$id, // what app caches and re uses
-        mimeType: "audio/mpeg",
-        size: mp3Bytes.length,
-      });
+// convert the file into a buffer
+    let buffer;
+      if (fileData instanceof ArrayBuffer) {
+      buffer = Buffer.from(fileData);
+    } else if (Buffer.isBuffer(fileData)) {
+      buffer = fileData;
+    } else if (fileData?.arrayBuffer) {
+      const arrayBuffer = await fileData.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+    } else {
+      buffer = Buffer.from(fileData);
     }
-
-    // Fallback return base64 in app even without storage for testing
-    return res.json({
-      ok: true,
-      uploaded: false,
-      mimeType: "audio/mpeg",
-      audioBase64: toBase64(mp3Bytes),
-      size: mp3Bytes.length,
-    });
-    // error handling
-  } catch (e) {
-    context.error("TTS function error:", e?.message || e); // return clear errors to fronted
-    return context.res.json(
-      {
-        ok: false,
-        error: e?.message || String(e),
-      },
+// create Openai client 
+const openai = new OpenAI({
+  apiKey: OPENAI_API_KEY,
+});
+// debug log
+console.log("Audio buffer size:", buffer.length);
+// convert buffer into file for openAI
+const audioFile = await toFile(buffer, "voice-command.m4a", {
+  type: "audio/m4a",
+});
+// call Openai transcription
+const result = await openai.audio.transcriptions.create({
+  file: audioFile, // send audio file to open ai
+  model: "gpt-4o-mini-transcribe", 
+  response_format: "text", // get plain text response
+});
+// debug log transcript
+console.log("Transcript result:", result);
+// return response
+return res.json({ // return json to the frontend
+  ok: true,
+  transcript: typeof result === "string" ? result.trim() : result?.text || "",
+});
+// error handling
+  } catch (e) { // logbackend error
+    error(e);
+    return res.json(
+      { ok: false, error: e?.message || "Transcription failed" }, // return error response to frontend
       500
     );
   }
 };
-
