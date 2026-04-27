@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,6 +13,10 @@ const [status, setStatus] = useState("idle");
 const [transcript, setTranscript] = useState("");
 const [actionText, setActionText] = useState("");
 
+const showAssistantMessage = (title, message) => {
+  Alert.alert(title, message);
+};
+
   const startRecording = async () => {
     try {
 
@@ -20,7 +24,10 @@ const [actionText, setActionText] = useState("");
       const permission = await Audio.requestPermissionsAsync();
 
       if (!permission.granted) {
-        alert("Microphone permission required");
+        showAssistantMessage(
+          "Microphone required",
+          "Please allow microphone access to use the Voice Assistant."
+        );
         return;
       }
 
@@ -115,6 +122,16 @@ const splitVoiceCommands = (text) => {
     .split(/\b(?:and then|then|and)\b/g)
     .map((part) => part.trim())
     .filter(Boolean);
+};
+
+const cleanVoiceTargetText = (value) => {
+  return normaliseVoiceText(value)
+    .replace(/\b(open|play|listen|read|save|saved)\b/g, "")
+    .replace(/\b(to|of|in|library)\b/g, " ")
+    .replace(/\b(saved summary|summary)\b/g, " ")
+    .replace(/\b(the|short|detailed|brief)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 };
 
 const buildAssistantStatusText = (actions = []) => {
@@ -241,16 +258,17 @@ const extractTargetText = (command) => {
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match?.[1]) {
-         return match[1]
+      return cleanVoiceTargetText(
+        match[1]
         .replace(/\b(it|this|that)\b/g, "")
-        .replace(/\b(the|short|detailed|brief)\b/g, "")
-        .replace(/\b(?:in library|and library|saved summary|summary)\b/g, "")
+        .replace(/\b(?:and library)\b/g, "")
         .replace(/\s+/g, " ")
-        .trim();
+        .trim()
+      );
     }
   }
 
-  return "";
+  return cleanVoiceTargetText(text);
 };
 
 const isReferentialCommand = (command) => {
@@ -854,7 +872,10 @@ const actions = rawActions.map((action) => {
   if (!actions.length) {
     setTranscript(text || "");
     setActionText("I couldn’t match that command.");
-    alert("I couldn't understand that command. Please try again.");
+    showAssistantMessage(
+      "Command not understood",
+      "I couldn’t understand that request. Please try saying it a different way."
+    );
     setStatus("idle");
     return;
   }

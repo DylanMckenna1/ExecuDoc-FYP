@@ -38,9 +38,26 @@ const hasText = typeof text === "string" && text.trim().length > 0;
   const [libError, setLibError] = useState("");
   const [items, setItems] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
+const [categoryFilter, setCategoryFilter] = useState("all");
 
   const [currentItem, setCurrentItem] = useState(null);
+
+  const formatListenError = (error, fallback) => {
+    const raw = (error?.message || error || "").trim();
+    const message = raw.toLowerCase();
+
+    if (!raw) return fallback;
+    if (message.includes("network")) {
+      return "We could not connect right now. Please check your connection and try again.";
+    }
+    if (message.includes("no longer than 65000 chars")) {
+      return "This file is too large to process fully for saved-summary playback.";
+    }
+    if (message.includes("no matching")) {
+      return "No matching saved summary was found.";
+    }
+    return fallback;
+  };
 
   //load saved summaries
   async function loadLibrary() {
@@ -60,7 +77,7 @@ const sorted = [...docs].sort(
 );
 setItems(sorted);
     } catch (e) {
-      setLibError(e?.message || "Failed to load library");
+      setLibError(formatListenError(e, "We could not load your Library right now."));
     } finally {
       setLoadingLib(false);
     }
@@ -130,12 +147,34 @@ useEffect(() => {
 
   setLocalText("");
   setCurrentItem(null);
+  setCategoryFilter("all");
 }, [
   route?.params?.autoMostRecent,
   route?.params?.autoOpenFirstMatch,
   route?.params?.autoPlayFirstMatch,
   route?.params?.autoSearchText,
   route?.params?.autoSummaryType,
+]);
+
+useEffect(() => {
+  const hasVoiceNavigation =
+    route?.params?.autoMostRecent === true ||
+    route?.params?.autoOpenFirstMatch === true ||
+    route?.params?.autoPlayFirstMatch === true ||
+    !!route?.params?.autoSearchText ||
+    !!route?.params?.autoSummaryType;
+
+  if (!hasVoiceNavigation) return;
+  if (hasText) return;
+
+  loadLibrary();
+}, [
+  route?.params?.autoMostRecent,
+  route?.params?.autoOpenFirstMatch,
+  route?.params?.autoPlayFirstMatch,
+  route?.params?.autoSearchText,
+  route?.params?.autoSummaryType,
+  hasText,
 ]);
 
 useEffect(() => {
@@ -240,7 +279,8 @@ if ((autoOpenFirstMatch || autoPlayFirstMatch) && bestMatch && bestScore >= 35 &
     );
   }
 
-  setSearchQuery(autoSearchText);
+  const queryWithoutSummary = query.replace(/\bsaved summary\b|\bsummary\b/g, "").trim();
+  setSearchQuery(queryWithoutSummary || query || autoSearchText);
 
   navigation.setParams({
     autoSearchText: "",
@@ -271,22 +311,28 @@ if ((autoOpenFirstMatch || autoPlayFirstMatch) && bestMatch && bestScore >= 35 &
 
   const normaliseVoiceSearch = (value) =>
   typeof value === "string"
-    ? value.toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim()
+    ? value
+        .toLowerCase()
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\biii\b/g, "3")
+        .replace(/\bii\b/g, "2")
+        .replace(/\biv\b/g, "4")
+        .replace(/\s+/g, " ")
+        .trim()
     : "";
 
   const normaliseLibraryVoiceQuery = (value) =>
     normaliseVoiceSearch(value)
-      .replace(/\biii\b/g, "3")
-      .replace(/\bii\b/g, "2")
-      .replace(/\biv\b/g, "4")
       .replace(/\bthe\b/g, "")
+      .replace(/\b(short|detailed|brief)\b/g, "")
+      .replace(/\b(saved summary|summary)\b/g, "")
       .replace(/\s+/g, " ")
       .trim();
   
-  const norm = (v) => (typeof v === "string" ? v.toLowerCase().trim() : "");
+  const norm = (v) => normaliseVoiceSearch(v);
 // search and filter
 const filteredItems = items.filter((it) => {
-  const q = norm(searchQuery);
+  const q = normaliseLibraryVoiceQuery(searchQuery);
   const cat = norm(it.category);
 
   if (categoryFilter !== "all" && cat !== norm(categoryFilter)) return false;
@@ -537,7 +583,10 @@ style={{
                       await removeSavedItem(item.$id);
                       await loadLibrary();
                     } catch (e) {
-                      Alert.alert("Remove failed", e?.message || "Could not remove item.");
+                      Alert.alert(
+                        "Remove failed",
+                        formatListenError(e, "We could not remove that item from your Library.")
+                      );
                     }
                   },
                 },
@@ -720,10 +769,12 @@ style={{
     <Ionicons name="library-outline" size={24} color={brand} />
   </View>
   <Text style={{ fontSize: 17, fontWeight: "900", color: "#0F172A" }}>
-    No saved summaries yet
+    {items.length === 0 ? "No saved summaries yet" : "No matching saved summaries found"}
   </Text>
   <Text style={{ marginTop: 8, color: "#64748B", textAlign: "center", lineHeight: 21 }}>
-    Save a summary from Documents and it will appear here for quick playback and view
+    {items.length === 0
+      ? "Save a summary from Documents and it will appear here for quick playback and view"
+      : "Try a different search or category to find the saved summary you want."}
   </Text>
 </View>
         }
@@ -857,7 +908,23 @@ style={{
   </View>
 )}
 
-        {error ? <Text style={{ color: "red", marginTop: 8 }}>{error}</Text> : null}
+        {error ? (
+          <View
+            style={{
+              marginTop: 12,
+              backgroundColor: "#FEF2F2",
+              borderRadius: 14,
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+              borderWidth: 1,
+              borderColor: "#FECACA",
+            }}
+          >
+            <Text style={{ color: "#B91C1C", fontWeight: "700" }}>
+              {formatListenError(error, "Playback is unavailable right now.")}
+            </Text>
+          </View>
+        ) : null}
 
        <View style={{ marginTop: 16 }}>
   <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>

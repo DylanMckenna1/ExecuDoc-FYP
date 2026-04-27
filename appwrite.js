@@ -41,7 +41,7 @@ export { Query };
 export const TTS_FUNCTION_URL = env("EXPO_PUBLIC_TTS_FUNCTION_URL", "");
 export const EXTRACT_TEXT_FUNCTION_ID = "697552940000b9d83b57";
 export const TAG_FUNCTION_ID = env("EXPO_PUBLIC_TAG_FUNCTION_ID", "");
-console.log("TAG_FUNCTION_ID:", TAG_FUNCTION_ID);
+
 
 
 // summarise function URL 
@@ -56,11 +56,6 @@ const storage = new Storage(client);
 const functions = new Functions(client);
 
 export const databasesClient = databases;
-
-async function getJwtString() {
-  const j = await account.createJWT();
-  return typeof j === "string" ? j : j?.jwt || "";
-}
 
 // Auth helpers
 export async function register(email, password, name) {
@@ -88,6 +83,62 @@ export async function logout() {
   } catch (e) {
     console.log("logout error", e?.message || e);
   }
+}
+
+function splitFullName(fullName = "") {
+  const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: "", lastName: "" };
+  }
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: "" };
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(" "),
+  };
+}
+
+export async function getUserProfile(userId) {
+  if (!userId) return null;
+
+  const res = await databases.listDocuments(
+    DATABASE_ID,
+    PROFILES_COLLECTION_ID,
+    [Query.equal("userID", userId), Query.limit(1)]
+  );
+
+  return res.documents?.[0] || null;
+}
+
+export async function createOrUpdateUserProfile({ userId, fullName, userType }) {
+  if (!userId) throw new Error("Missing userId");
+
+  const { firstName, lastName } = splitFullName(fullName || "");
+  const existing = await getUserProfile(userId);
+
+  const data = {
+    userID: userId,
+    firstName: firstName || "",
+    lastName: lastName || "",
+    userType: (userType || "").trim().toLowerCase(),
+  };
+
+  if (existing?.$id) {
+    return databases.updateDocument(
+      DATABASE_ID,
+      PROFILES_COLLECTION_ID,
+      existing.$id,
+      data
+    );
+  }
+
+  return databases.createDocument(
+    DATABASE_ID,
+    PROFILES_COLLECTION_ID,
+    ID.unique(),
+    data
+  );
 }
 
 // Helpers 
@@ -287,22 +338,10 @@ export async function callTranscribeVoiceFunction(fileId) {
     TRANSCRIBE_VOICE_FUNCTION_ID,
     { fileId }
   );
-// reads the raw response
-  const bodyText =
-  execution?.responseBody ||
-  execution?.stdout ||
-  execution?.response ||
-  "";
-
-console.log("transcribe raw response:", bodyText);
-console.log("transcribe execution:", execution);
-//parse json
-  let parsed = null;
-try {
-  parsed = typeof bodyText === "string" ? JSON.parse(bodyText) : bodyText;
-} catch {}
-
-if (parsed?.error) throw new Error(parsed.error);
+  const parsed = parseFunctionExecutionJson(
+    execution,
+    "Voice transcription could not be completed."
+  );
 // pull the transcript string
 const transcript =
   parsed?.transcript ??
@@ -339,11 +378,6 @@ export async function deleteUserDoc(docId, fileId) {
   await Promise.all(tasks);
 }
 
-export function getFileViewUrl(fileId) {
-  if (!fileId) return null;
-  return `${APPWRITE_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${fileId}/view?project=${APPWRITE_PROJECT_ID}`;
-}
-
 export function getFileDownloadUrl(fileId) {
   if (!fileId) return null;
   return `${APPWRITE_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${fileId}/download?project=${APPWRITE_PROJECT_ID}`;
@@ -352,10 +386,6 @@ export function getFileDownloadUrl(fileId) {
 export async function updateDocFields(docId, data) {
   if (!docId) throw new Error("Missing docId in updateDocFields");
   return databases.updateDocument(DATABASE_ID, DOCUMENTS_COLLECTION_ID, docId, data || {});
-}
-
-export async function attachExtractedText(docId, text) {
-  return updateDocFields(docId, { textContent: text || "" });
 }
 
 export async function attachTextContent(docId, text) {
@@ -392,7 +422,6 @@ export async function callSummariseFunction(doc, mode = "short") {
   });
 
   const bodyText = await resp.text();
-  console.log("summarise raw response:", bodyText);
 
   let parsed = null;
   try {
@@ -405,6 +434,33 @@ export async function callSummariseFunction(doc, mode = "short") {
   if (parsed?.error) throw new Error(parsed.error);
 
   return parsed || { ok: true, summary: bodyText };
+}
+
+function getFunctionExecutionBody(execution) {
+  return execution?.responseBody || execution?.stdout || execution?.response || "";
+}
+
+function parseFunctionExecutionJson(execution, fallbackMessage) {
+  const bodyText = getFunctionExecutionBody(execution);
+
+  if (!bodyText || (typeof bodyText === "string" && !bodyText.trim())) {
+    throw new Error(fallbackMessage);
+  }
+
+  let parsed = null;
+  try {
+    parsed = typeof bodyText === "string" ? JSON.parse(bodyText) : bodyText;
+  } catch {
+    throw new Error(fallbackMessage);
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(fallbackMessage);
+  }
+
+  if (parsed?.error) throw new Error(parsed.error);
+
+  return parsed;
 }
 
 async function executeFunctionAndWait(functionId, payload) {
@@ -422,12 +478,12 @@ export async function callExtractTextFunction(doc) {
   // get docid 
   const docId = typeof doc === "string" ? doc : doc?.$id;
   if (!docId) throw new Error("Missing docId for extractDocumentText.");
-// get the file info
+// get the file metadata
   const fileId = typeof doc === "object" ? doc?.fileId : null;
   const mimeType = typeof doc === "object" ? doc?.mimeType : null;
   const fileUrl = fileId ? getFileDownloadUrl(fileId) : null;
-// building function payload
-  const payload = {
+// building function payload of fileID and metadata
+  const payload = { 
     documentId: docId, 
     docId, 
     ...(fileId ? { fileId } : {}),
@@ -436,39 +492,36 @@ export async function callExtractTextFunction(doc) {
     ...(doc?.title ? { title: doc.title } : {}),
   };
 
-  // call function
+  // execute backend function
   const execution = await executeFunctionAndWait(
   EXTRACT_TEXT_FUNCTION_ID,
   payload
 );
-// function response
-  const bodyText = execution?.responseBody || "";
-  console.log("extract raw response:", bodyText);
-// parse json
-  let parsed = null;
-  try {
-    parsed = JSON.parse(bodyText);
-  } catch {}
-
-  if (parsed?.error) throw new Error(parsed.error);
-// get extracted text
+  const parsed = parseFunctionExecutionJson(
+    execution,
+    "Text extraction could not be completed."
+  );
+// extract actual text
   const text =
     parsed?.textContent ??
     parsed?.extractedText ??
     parsed?.text ??
     "";
-
+// save text into TextContent field 
   if (text && typeof text === "string") {
     try {
       await attachTextContent(docId, text);
     } catch (e) {
-      console.log("attachTextContent failed:", e?.message || e);
+      throw new Error(e?.message || "Extracted text could not be saved.");
     }
+  }
+  if (!text || typeof text !== "string") {
+    throw new Error("No extracted text was returned.");
   }
 // return result
   return parsed || { ok: true, textContent: text };
 }
-export async function callTagFunction(doc) {
+export async function callTagFunction(doc, options = {}) {
   const docId = typeof doc === "string" ? doc : doc?.$id;
   if (!docId) throw new Error("Missing docId for tagging.");
   if (!TAG_FUNCTION_ID) throw new Error("TAG_FUNCTION_ID not set.");
@@ -489,13 +542,10 @@ export async function callTagFunction(doc) {
   payload
 );
 
-  const bodyText = execution?.responseBody || "";
-  let parsed = null;
-  try {
-    parsed = JSON.parse(bodyText);
-  } catch {}
-
-  if (parsed?.error) throw new Error(parsed.error);
+  const parsed = parseFunctionExecutionJson(
+    execution,
+    "Category and keyword generation could not be completed."
+  );
 // get ai results
 const category = parsed?.category;
 const keywords = parsed?.keywords;
@@ -504,7 +554,7 @@ const mappedCategory = mapCategory(category, keywords, doc?.title);
 
 const patch = {};
 
-if (!existingCategory && mappedCategory) {
+if ((options?.forceCategory || !existingCategory) && mappedCategory) {
   patch.category = mappedCategory;
 }
 
@@ -516,7 +566,7 @@ if (Object.keys(patch).length > 0) {
   try {
     await updateDocFields(docId, patch);
   } catch (e) {
-    console.log("updateDocFields(tag) failed:", e?.message || e);
+    throw new Error(e?.message || "Category and keywords could not be saved.");
   }
 }
 // return
@@ -595,6 +645,16 @@ export async function saveToLibrary({
     ID.unique(),
     data,
     savedItemPermissions(userId)
+  );
+}
+
+export async function updateSavedItem(savedItemId, data) {
+  if (!savedItemId) throw new Error("Missing savedItemId");
+  return databases.updateDocument(
+    DATABASE_ID,
+    SAVED_ITEMS_COLLECTION_ID,
+    savedItemId,
+    data || {}
   );
 }
 

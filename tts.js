@@ -45,8 +45,10 @@ export async function requestTtsFileId({ ttsFunctionUrl, appwriteProjectId, text
 
 export async function playLocalMp3(uri, onStatus) {
   await Audio.setAudioModeAsync({
+    allowsRecordingIOS: false,
     playsInSilentModeIOS: true,
     staysActiveInBackground: false,
+    shouldDuckAndroid: true,
   });
 
   const { sound } = await Audio.Sound.createAsync(
@@ -101,14 +103,14 @@ export async function generateAndPlayTts({
 
   if (stopCurrentSound) await stopCurrentSound();
 
-  // 1) request tts
+  //request tts
   const { fileId, bucketId } = await requestTtsFileId({
     ttsFunctionUrl,
     appwriteProjectId,
     text,
   });
 
-  // 2) build file url
+  // build file url
   const remoteUrl = buildAppwriteFileViewUrl({
     endpoint: appwriteEndpoint,
     projectId: appwriteProjectId,
@@ -116,10 +118,10 @@ export async function generateAndPlayTts({
     fileId,
   });
 
-  // 3) cache locally
+  // cache locally
   const localUri = await getOrDownloadMp3({ remoteUrl, fileId });
 
-  // 4) play
+  //play
   const sound = await playLocalMp3(localUri, (status) => {
     onStatus?.({ ...status, fileId });
   });

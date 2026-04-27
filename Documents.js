@@ -53,6 +53,29 @@ const { brand } = Colors;
 
 /* ─ helpers ─ */
 
+function formatDocumentError(error, fallback) {
+  const raw = (error?.message || error || '').trim();
+  const message = raw.toLowerCase();
+
+  if (!raw) return fallback;
+  if (message.includes('no longer than 65000 chars')) {
+    return 'This file is too large to process fully in-app. You can still open it, but advanced actions may be limited.';
+  }
+  if (message.includes('no longer than 5250 chars')) {
+    return 'That summary is too large to save in its current form. Try the short summary instead.';
+  }
+  if (message.includes('network')) {
+    return 'We could not connect right now. Please check your connection and try again.';
+  }
+  if (message.includes('permission')) {
+    return 'That action needs permission before it can continue.';
+  }
+  if (message.includes('no matching document found')) {
+    return 'No matching document was found.';
+  }
+  return fallback;
+}
+
 // determine document type 
 function deriveType(doc) {
   if (doc.fileType) return doc.fileType;
@@ -198,7 +221,7 @@ const onAutoTag = async (doc, options = {}) => {
     }
   } catch (e) {
     if (!silent) {
-      Alert.alert("Tagging failed", e?.message || "Try again later.");
+      Alert.alert("Tagging failed", formatDocumentError(e, "Please try again a little later."));
     } else {
       console.log("silent tagging failed:", e?.message || e);
     }
@@ -709,7 +732,10 @@ if (autoListenRecent) {
 
   runVoiceActions()
   .catch((e) => {
-    Alert.alert("Voice command failed", e?.message || "Please try again.");
+    Alert.alert(
+      "Voice command failed",
+      formatDocumentError(e, "I couldn’t complete that request. Please try again.")
+    );
   })
   .finally(() => {
     setSearchQuery("");
@@ -768,7 +794,7 @@ navigation.setParams({
     setShowUploadModal(true);
   } catch (e) {
     console.log('upload file error', e);
-    Alert.alert('Upload failed', e?.message || 'Please try again.');
+    Alert.alert('Upload failed', formatDocumentError(e, 'Please try again.'));
   }
 };
 
@@ -808,7 +834,7 @@ navigation.setParams({
     setShowUploadModal(true);
   } catch (e) {
     console.log('take photo error', e);
-    Alert.alert('Upload failed', e?.message || 'Please try again.');
+    Alert.alert('Upload failed', formatDocumentError(e, 'Please try again.'));
   }
 };
 // save file and create doc record
@@ -833,7 +859,7 @@ const confirmUpload = async () => {
     await load(); // refresh 
   } catch (e) {
     console.log('confirm upload error', e);
-    Alert.alert('Upload failed', e?.message || 'Please try again.');
+    Alert.alert('Upload failed', formatDocumentError(e, 'Please try again.'));
   }
 };
 // reset modal state
@@ -938,7 +964,7 @@ if (isDocxFile) {
       console.log('open error', e);
       setViewerVisible(false);
       setViewerUri(null);
-      Alert.alert('Open failed', e?.message || 'Could not open file.');
+      Alert.alert('Open failed', formatDocumentError(e, 'Could not open this file.'));
     } finally {
       setViewerLoading(false);
     }
@@ -1013,7 +1039,7 @@ if (!text) {
     const newSummary = (result?.summary || "").trim();
 
     if (!newSummary) {
-      if (result?.error) Alert.alert("Summarise failed", result.error);
+      if (result?.error) Alert.alert("Summarise failed", formatDocumentError(result.error, "We could not generate a summary for this file."));
       else Alert.alert("Summarise complete", "No summary returned.");
       return;
     }
@@ -1051,7 +1077,7 @@ if (!isDetailed) {
     await load();
   } catch (e) {
     console.log("summarise error", e);
-    Alert.alert("Summarise failed", e?.message || "Try again later.");
+    Alert.alert("Summarise failed", formatDocumentError(e, "Please try again a little later."));
   } finally {
     setSummarisingId(null);
   }
@@ -1252,7 +1278,7 @@ const openSummaryResult = (doc, summaryText, summaryType = "short") => {
         try {
           await saveSummaryToLibraryDirect(doc, cleanSummary, summaryType);
         } catch (e) {
-          Alert.alert("Save failed", e?.message || "Could not save summary.");
+          Alert.alert("Save failed", formatDocumentError(e, "Could not save that summary."));
         }
       },
     },
@@ -1393,7 +1419,7 @@ const onListenDoc = async (doc, options = {}) => { // Listen to full document en
     }
   } catch (e) {
     console.log("listen doc error", e);
-    Alert.alert("Listen failed", e?.message || "Try again.");
+    Alert.alert("Listen failed", formatDocumentError(e, "Please try again."));
   }
 };
   /* ─ delete ─*/
@@ -1408,7 +1434,7 @@ const onListenDoc = async (doc, options = {}) => { // Listen to full document en
             await deleteUserDoc(doc.$id, doc.fileId);
             await load();
           } catch (e) {
-            Alert.alert('Delete failed', e?.message || 'Try again.');
+            Alert.alert('Delete failed', formatDocumentError(e, 'Please try again.'));
           }
         },
       },
