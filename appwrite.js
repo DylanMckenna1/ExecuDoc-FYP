@@ -57,6 +57,24 @@ const functions = new Functions(client);
 
 export const databasesClient = databases;
 
+function userOwnedPermissions(userId) {
+  if (!userId) return [];
+  return [
+    Permission.read(Role.user(userId)),
+    Permission.update(Role.user(userId)),
+    Permission.delete(Role.user(userId)),
+  ];
+}
+
+async function currentUserIdForPermissions() {
+  try {
+    const me = await account.get();
+    return me?.$id || me?.id || "";
+  } catch {
+    return "";
+  }
+}
+
 // Auth helpers
 export async function register(email, password, name) {
   const user = await account.create(ID.unique(), email, password, name);
@@ -137,7 +155,8 @@ export async function createOrUpdateUserProfile({ userId, fullName, userType }) 
     DATABASE_ID,
     PROFILES_COLLECTION_ID,
     ID.unique(),
-    data
+    data,
+    userOwnedPermissions(userId)
   );
 }
 
@@ -229,7 +248,10 @@ function mapCategory(rawCategory, keywords, title) {
     combined.includes("school") ||
     combined.includes("study") ||
     combined.includes("thesis") ||
-    combined.includes("project")
+    combined.includes("project") ||
+    combined.includes("module") ||
+    combined.includes("coursework") ||
+    combined.includes("student")
   ) {
     return "study";
   }
@@ -290,6 +312,7 @@ export async function uploadUserDoc(userId, file) {
     bucketId: BUCKET_ID,
     fileId: ID.unique(),
     file: { name, type: mimeType, size, uri: file.uri },
+    permissions: userOwnedPermissions(userId),
   });
 
   const doc = await databases.createDocument(
@@ -307,7 +330,8 @@ export async function uploadUserDoc(userId, file) {
       ttsSummaryParts: "",
       category,
       keywords: "",
-    }
+    },
+    userOwnedPermissions(userId)
   );
 
   return doc;
@@ -315,6 +339,8 @@ export async function uploadUserDoc(userId, file) {
 // uploads recorder .m4a to appwrite storage 
 export async function uploadVoiceRecording(file) {
   if (!file?.uri) throw new Error("Missing voice file.");
+
+  const userId = await currentUserIdForPermissions();
 
   const storedFile = await storage.createFile({
     bucketId: VOICE_RECORDINGS_BUCKET_ID,
@@ -325,6 +351,7 @@ export async function uploadVoiceRecording(file) {
       size: file.size || 0,
       uri: file.uri,
     },
+    permissions: userOwnedPermissions(userId),
   });
 // returns file object/id
   return storedFile;
@@ -532,6 +559,7 @@ export async function callTagFunction(doc, options = {}) {
 
   const payload = {
     docId,
+    forceCategory: options?.forceCategory === true,
     ...(fileId ? { fileId } : {}),
     ...(fileUrl ? { fileUrl } : {}),
     ...(mimeType ? { mimeType } : {}),
@@ -574,15 +602,6 @@ if (Object.keys(patch).length > 0) {
 }
 
 // Library
-function savedItemPermissions(userId) {
-  if (!userId) return [];
-  return [
-    Permission.read(Role.user(userId)),
-    Permission.update(Role.user(userId)),
-    Permission.delete(Role.user(userId)),
-  ];
-}
-
 export async function listSavedItems(userId) {
   if (!userId) return [];
   const res = await databases.listDocuments(
@@ -644,7 +663,7 @@ export async function saveToLibrary({
     SAVED_ITEMS_COLLECTION_ID,
     ID.unique(),
     data,
-    savedItemPermissions(userId)
+    userOwnedPermissions(userId)
   );
 }
 

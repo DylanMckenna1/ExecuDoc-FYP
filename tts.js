@@ -23,6 +23,8 @@ export async function getOrDownloadMp3({ remoteUrl, fileId }) {
 export async function requestTtsFileId({ ttsFunctionUrl, appwriteProjectId, text }) {
   
   const jwt = await account.createJWT();
+  const me = await account.get().catch(() => null);
+  const userId = me?.$id || me?.id || "";
 
   const res = await fetch(`${ttsFunctionUrl}/`, {
     method: "POST",
@@ -31,7 +33,7 @@ export async function requestTtsFileId({ ttsFunctionUrl, appwriteProjectId, text
       "X-Appwrite-Project": appwriteProjectId,
       "X-Appwrite-JWT": jwt.jwt,
     },
-    body: JSON.stringify({ text, doTTS: true }),
+    body: JSON.stringify({ text, doTTS: true, userId }),
   });
 
   const data = await res.json().catch(() => ({}));

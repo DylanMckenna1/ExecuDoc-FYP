@@ -1,5 +1,5 @@
 // screens/Documents.js
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   FlatList,
@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   ScrollView,
   TextInput,
+  Keyboard,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Image } from 'react-native';
@@ -70,10 +71,26 @@ function formatDocumentError(error, fallback) {
   if (message.includes('permission')) {
     return 'That action needs permission before it can continue.';
   }
+  if (message.includes('camera not available on simulator')) {
+    return 'Camera is not available in the simulator. Please use Upload File or test this on a real device.';
+  }
+  if (
+    message.includes('legacy .doc') ||
+    message.includes('application/msword') ||
+    message.includes('unsupported file')
+  ) {
+    return 'This file type is not supported. Please use PDF, DOCX, or an image instead.';
+  }
   if (message.includes('no matching document found')) {
     return 'No matching document was found.';
   }
   return fallback;
+}
+
+function isLegacyWordUpload(file) {
+  const mime = (file?.type || '').toLowerCase();
+  const name = (file?.name || '').toLowerCase();
+  return mime === 'application/msword' || name.endsWith('.doc');
 }
 
 // determine document type 
@@ -179,6 +196,7 @@ export default function Documents({ route, navigation }) {
   const [categoryModalDoc, setCategoryModalDoc] = useState(null);
   const [categoryChoice, setCategoryChoice] = useState("");
   const [categoryCustom, setCategoryCustom] = useState("");
+  const categoryCustomRef = useRef("");
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [taggingId, setTaggingId] = useState(null);
 
@@ -189,35 +207,65 @@ export default function Documents({ route, navigation }) {
   const [kwModalDoc, setKwModalDoc] = useState(null);
   const [lastVoiceDoc, setLastVoiceDoc] = useState(null);
   const [lastSuggestedVoiceDocs, setLastSuggestedVoiceDocs] = useState([]);
+
+  const ensureActiveUserId = async () => {
+    if (userId) return userId;
+
+    try {
+      const freshUser = await account.get();
+      setUser(freshUser);
+      return freshUser?.$id || freshUser?.id || null;
+    } catch {
+      return null;
+    }
+  };
 // Auto tag, ensure text exists 
 const onAutoTag = async (doc, options = {}) => {
   const silent = options?.silent === true;
   const docId = doc?.$id;
 
   if (!docId) {
-    Alert.alert("Tagging failed", "Missing document id.");
+    if (!silent) {
+      Alert.alert("Tagging failed", "Missing document id.");
+    }
     return;
   }
 // set tagging id for loading state 
   try {
     setTaggingId(docId);
 
-  const hasText = (doc?.textContent || "").trim().length > 0;
-  if (!hasText) {
-  await callExtractTextFunction(doc);
+    const hasText = (doc?.textContent || "").trim().length > 0;
+    const hasTaggableContent = [doc?.title, doc?.keywords, doc?.summary, doc?.textContent]
+      .map((value) => (value || "").toString().trim())
+      .some(Boolean);
+    let workingDoc = doc;
 
-  // ensure fresh doc with text
-  const refreshed = await getDocumentById(docId);
-  doc = refreshed;
-}
+    if (!hasText && !options?.forceCategory) {
+      await callExtractTextFunction(doc);
+      workingDoc = await getDocumentById(docId);
+    } else if (!hasText && options?.forceCategory && !hasTaggableContent) {
+      await callExtractTextFunction(doc);
+      workingDoc = await getDocumentById(docId);
+    }
+
 // get latest doc by iD and calls tagFunction latest doc
-    const latestDoc = await getDocumentById(docId);
+    const latestDoc = workingDoc || (await getDocumentById(docId));
     await callTagFunction(latestDoc, { forceCategory: options?.forceCategory === true });
-// reloads the list 
-    await load();
 
-    if (!silent) {
-      Alert.alert("Done", "Category and keywords updated.");
+    const updatedDoc = await getDocumentById(docId);
+
+    setFiles(prev => prev.map(item => (item.$id === docId ? updatedDoc : item)));
+
+    if (updatedDoc?.category) {
+      await syncSavedSummaryCategoryForDoc(docId, updatedDoc.category);
+    }
+
+    setTaggingId(null);
+
+    try {
+      await load();
+    } catch (reloadErr) {
+      console.log("reload after tagging failed:", reloadErr?.message || reloadErr);
     }
   } catch (e) {
     if (!silent) {
@@ -262,6 +310,7 @@ const closeCategoryModal = () => {
   setCategoryModalDoc(null);
   setCategoryChoice("");
   setCategoryCustom("");
+  categoryCustomRef.current = "";
 };
 
 const openKeywordsModal = (doc) => {
@@ -280,6 +329,7 @@ const openCategoryModalForDoc = (doc) => {
   setCategoryModalDoc(doc);
   setCategoryChoice(normaliseCategory(doc?.category) || "");
   setCategoryCustom("");
+  categoryCustomRef.current = "";
   setCategoryModalVisible(true);
 };
 // handles document menu action
@@ -473,6 +523,29 @@ useEffect(() => {
   } else {
     setSearchQuery("");
   }
+
+  const hasDocumentVoiceAction =
+    autoOpenRecent ||
+    autoTargetText ||
+    autoSearchText ||
+    autoUseLastVoiceDoc ||
+    autoSuggestedMatchIndex !== null ||
+    autoFolderDocCategory ||
+    autoFolderDocIndex !== null ||
+    autoOpenSummaryTarget ||
+    autoListenSummaryTarget ||
+    autoSaveSummaryTarget ||
+    autoSummariseRecent ||
+    autoListenRecent ||
+    autoSaveRecentSummary;
+
+  if (autoFilterCategory && !hasDocumentVoiceAction) {
+    navigation.setParams({
+      autoFilterCategory: null,
+      commandNonce: null,
+    });
+    return;
+  }
 // main voice action to resolve target and run requested action
   const runVoiceActions = async () => {
   let workingDoc = null;
@@ -609,6 +682,13 @@ useEffect(() => {
         ""
       ).trim();
 
+      if (text) {
+        workingDoc = {
+          ...workingDoc,
+          textContent: text,
+        };
+      }
+
       if (!text) {
         const freshDocs = await listUserDocs(userId);
         setFiles(freshDocs);
@@ -650,12 +730,16 @@ useEffect(() => {
       summaryDetailedText: newSummary,
     });
 
-    await updateTtsCacheField(workingDoc.$id, nextCacheJson);
+    try {
+      await updateTtsCacheField(workingDoc.$id, nextCacheJson);
 
-    workingDoc = {
-      ...workingDoc,
-      ttsSummaryParts: nextCacheJson,
-    };
+      workingDoc = {
+        ...workingDoc,
+        ttsSummaryParts: nextCacheJson,
+      };
+    } catch (e) {
+      console.log("detailed summary cache save failed", e);
+    }
   } else {
     await updateDocFields(workingDoc.$id, { summary: newSummary });
 
@@ -686,7 +770,11 @@ useEffect(() => {
     }
 
     if (autoOpenSummaryTarget && summaryText) {
-      openVoiceSummaryResult(workingDoc, summaryText, "short");
+      openVoiceSummaryResult(
+        workingDoc,
+        summaryText,
+        summaryMode === "detailed" ? "detailed" : "short"
+      );
       setSearchQuery("");
     }
  
@@ -765,7 +853,8 @@ navigation.setParams({
   /* ─ uploads ─ */
 
  const onUploadFile = async () => {
-  if (!userId) {
+  const activeUserId = await ensureActiveUserId();
+  if (!activeUserId) {
     Alert.alert('Not logged in', 'Session not ready yet. Please wait a second.');
     return;
   }
@@ -788,6 +877,14 @@ navigation.setParams({
       size: asset.size || 0,
     };
 
+    if (isLegacyWordUpload(fileToUpload)) {
+      Alert.alert(
+        'Unsupported file',
+        'Legacy .doc files are not supported. Please use PDF, DOCX, or an image instead.'
+      );
+      return;
+    }
+
     setPendingFile(fileToUpload);
     setUploadTitle(fileToUpload.name || "");
     setUploadCategory("");
@@ -799,7 +896,8 @@ navigation.setParams({
 };
 
   const onTakePhoto = async () => {
-  if (!userId) {
+  const activeUserId = await ensureActiveUserId();
+  if (!activeUserId) {
     Alert.alert('Not logged in', 'Session not ready yet. Please wait a second.');
     return;
   }
@@ -839,12 +937,17 @@ navigation.setParams({
 };
 // save file and create doc record
 const confirmUpload = async () => {
-  if (!userId || !pendingFile) return;
+  const activeUserId = await ensureActiveUserId();
+  if (!activeUserId || !pendingFile) return;
 
   try {
+    if (isLegacyWordUpload(pendingFile)) {
+      throw new Error('Unsupported file type: legacy .doc');
+    }
+
     const finalTitle = uploadTitle.trim() || pendingFile.name || "document";
 
-    const createdDoc = await uploadUserDoc(userId, {
+    const createdDoc = await uploadUserDoc(activeUserId, {
       ...pendingFile,
       title: finalTitle,
       category: uploadCategory,
@@ -1013,6 +1116,13 @@ if (!text) {
     ""
   ).trim();
 
+  if (text) {
+    workingDoc = {
+      ...workingDoc,
+      textContent: text,
+    };
+  }
+
   if (!text) {
     // fallback: reload fresh doc
     const freshDocs = await listUserDocs(userId);
@@ -1150,7 +1260,6 @@ const simplifyVoiceMatchText = (value) => {
   const simplifiedTitle = simplifyVoiceMatchText(doc?.title);
   const keywords = normalise(doc?.keywords);
   const summary = normalise(doc?.summary);
-  const textContent = normalise(doc?.textContent);
   const category = normalise(doc?.category);
 
   let score = 0;
@@ -1174,7 +1283,6 @@ const simplifyVoiceMatchText = (value) => {
     score += 55;
   }
 
-// partial overlap on title words
 const targetWords = (simplifiedTargetText || targetText).split(" ").filter(Boolean);
 const titleWords = simplifiedTitle.split(" ").filter(Boolean);
 const matchedWords = targetWords.filter((word) => titleWords.includes(word)).length;
@@ -1182,24 +1290,25 @@ const matchedWords = targetWords.filter((word) => titleWords.includes(word)).len
 if (matchedWords >= 1) score += 15;
 if (matchedWords >= 2) score += 30;
 if (targetWords.length > 0 && matchedWords === targetWords.length) score += 25;
-  
 
-  // category match
-  if (category && (targetText.includes(category) || simplifiedTargetText.includes(category))) {
-    score += 50;
+  const hasTitleSignal =
+    score > 0 ||
+    (targetText && title.includes(targetText)) ||
+    (simplifiedTargetText && simplifiedTitle.includes(simplifiedTargetText));
+
+  if (!hasTitleSignal) {
+    return 0;
   }
 
-  // keywords
-  if (targetText && keywords.includes(targetText)) score += 40;
-  if (simplifiedTargetText && keywords.includes(simplifiedTargetText)) score += 35;
+  if (category && (targetText.includes(category) || simplifiedTargetText.includes(category))) {
+    score += 8;
+  }
 
-  // summary
-  if (targetText && summary.includes(targetText)) score += 20;
-  if (simplifiedTargetText && summary.includes(simplifiedTargetText)) score += 15;
+  if (targetText && keywords.includes(targetText)) score += 10;
+  if (simplifiedTargetText && keywords.includes(simplifiedTargetText)) score += 8;
 
-  // fallback 
-  if (score === 0 && targetText && textContent.includes(targetText)) score += 10;
-  if (score === 0 && simplifiedTargetText && textContent.includes(simplifiedTargetText)) score += 10;
+  if (targetText && summary.includes(targetText)) score += 6;
+  if (simplifiedTargetText && summary.includes(simplifiedTargetText)) score += 4;
 
   return score;
 };
@@ -1304,16 +1413,40 @@ const saveSummaryToLibraryDirect = async (doc, summaryText, summaryType = "short
     throw new Error("No summary available to save.");
   }
 
-  await saveToLibrary({
-    userId,
-    docId: doc.$id,
-    title: doc.title,
-    summaryType,
-    summaryText: cleanSummary,
-    audioFileId: "",
-    category: doc.category || "",
-    keywords: doc.keywords || "",
-  });
+  const candidateSummaries = [
+    cleanSummary,
+    cleanSummary.slice(0, 4000).trim(),
+    cleanSummary.slice(0, 3000).trim(),
+    cleanSummary.slice(0, 2000).trim(),
+    cleanSummary.slice(0, 1200).trim(),
+  ].filter(Boolean);
+
+  let lastError = null;
+
+  for (const candidate of candidateSummaries) {
+    try {
+      await saveToLibrary({
+        userId,
+        docId: doc.$id,
+        title: doc.title,
+        summaryType,
+        summaryText: candidate,
+        audioFileId: "",
+        category: doc.category || "",
+        keywords: doc.keywords || "",
+      });
+      return;
+    } catch (e) {
+      lastError = e;
+      const raw = String(e?.message || e || "").toLowerCase();
+
+      if (!raw.includes("no longer than")) {
+        throw e;
+      }
+    }
+  }
+
+  throw lastError || new Error("Could not save that summary.");
 };
 // Keep saved summaries in sync when a document category changes
 const syncSavedSummaryCategoryForDoc = async (docId, nextCategory) => {
@@ -2272,9 +2405,13 @@ style={{
       <TextInput
         value={categoryCustom}
         onChangeText={(t) => {
+          categoryCustomRef.current = t;
           setCategoryCustom(t);
           if (t.trim().length > 0) setCategoryChoice("");
         }}
+        autoCapitalize="none"
+        autoCorrect={false}
+        spellCheck={false}
         placeholder="e.g. insurance"
         placeholderTextColor="#94A3B8"
         style={{
@@ -2296,11 +2433,12 @@ style={{
             try {
               const docId = categoryModalDoc?.$id;
               if (!docId) return;
+              const customValue = String(categoryCustomRef.current || "")
+                .replace(/[^a-z0-9 &-]/gi, "")
+                .replace(/\s+/g, " ")
+                .trim();
 
-              const next =
-                categoryCustom.trim().length > 0
-                  ? categoryCustom.trim().toLowerCase()
-                  : categoryChoice;
+              const next = customValue.length > 0 ? customValue : categoryChoice;
 
               if (!next) {
                 Alert.alert("Category required", "Please choose or type a category.");

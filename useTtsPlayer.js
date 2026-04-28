@@ -1,6 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { generateAndPlayTts, playStoredTtsFileId } from "../services/tts";
 
+function formatTtsError(error, fallback) {
+  const raw = (error?.message || error || "").trim();
+  const message = raw.toLowerCase();
+
+  if (!raw) return fallback;
+  if (message.includes("audio session not activated")) {
+    return "Audio playback is not ready yet. Please try again.";
+  }
+  if (message.includes("no cached audio")) {
+    return "No saved audio is available for this item yet.";
+  }
+  if (message.includes("no text provided")) {
+    return "There is no text available to turn into audio.";
+  }
+  if (message.includes("network")) {
+    return "We could not connect right now. Please try again in a moment.";
+  }
+  if (message.includes("65000 chars")) {
+    return "This file is too large to prepare for audio playback in the app.";
+  }
+  return fallback;
+}
+
 function splitIntoChunks(text, maxLen = 900) {
   const clean = String(text || "").trim();
   if (!clean) return [];
@@ -64,6 +87,7 @@ export function useTtsPlayer({
   const soundRef = useRef(null);
   const stopRequestedRef = useRef(false);
   const pausedRef = useRef(false);
+  const runTokenRef = useRef(0);
 
   const [status, setStatus] = useState("idle"); //| generating | downloading | playing | paused | error
   const [error, setError] = useState(null);
@@ -86,10 +110,21 @@ export function useTtsPlayer({
   }, [stopCurrentSound]);
 
   const stop = useCallback(async () => {
+    runTokenRef.current += 1;
     stopRequestedRef.current = true;
     pausedRef.current = false;
     await stopCurrentSound();
     setStatus("idle");
+  }, [stopCurrentSound]);
+
+  const beginPlaybackRun = useCallback(async () => {
+    runTokenRef.current += 1;
+    const runToken = runTokenRef.current;
+    stopRequestedRef.current = true;
+    pausedRef.current = false;
+    await stopCurrentSound();
+    stopRequestedRef.current = false;
+    return runToken;
   }, [stopCurrentSound]);
 
   const pause = useCallback(async () => {
@@ -101,7 +136,7 @@ export function useTtsPlayer({
       setStatus("paused");
     } catch (e) {
       setStatus("error");
-      setError(e?.message || "Pause failed");
+      setError(formatTtsError(e, "Audio could not be paused."));
     }
   }, []);
 
@@ -114,7 +149,7 @@ export function useTtsPlayer({
       setStatus("playing");
     } catch (e) {
       setStatus("error");
-      setError(e?.message || "Resume failed");
+      setError(formatTtsError(e, "Audio could not be resumed."));
     }
   }, []);
 
@@ -122,15 +157,14 @@ export function useTtsPlayer({
   const playParts = useCallback(
     async (fileIds = []) => {
       setError(null);
-      stopRequestedRef.current = false;
-      pausedRef.current = false;
+      const runToken = await beginPlaybackRun();
 
       try {
-        const ids = Array.isArray(fileIds) ? fileIds.filter(Boolean) : [];
+        const ids = Array.isArray(fileIds) ? [...new Set(fileIds.filter(Boolean))] : [];
         if (!ids.length) throw new Error("No cached audio parts found");
 
         for (let i = 0; i < ids.length; i++) {
-          if (stopRequestedRef.current) break;
+          if (stopRequestedRef.current || runTokenRef.current !== runToken) break;
 
           let resolveFinished;
           const finishedPromise = new Promise((resolve) => {
@@ -156,6 +190,12 @@ export function useTtsPlayer({
             },
           });
 
+          if (stopRequestedRef.current || runTokenRef.current !== runToken) {
+            await sound.stopAsync().catch(() => {});
+            await sound.unloadAsync().catch(() => {});
+            break;
+          }
+
           soundRef.current = sound;
           setStatus("playing");
 
@@ -163,7 +203,7 @@ export function useTtsPlayer({
             finishedPromise,
             new Promise((resolve) => {
               const t = setInterval(() => {
-                if (stopRequestedRef.current) {
+                if (stopRequestedRef.current || runTokenRef.current !== runToken) {
                   clearInterval(t);
                   resolve();
                 }
@@ -171,30 +211,29 @@ export function useTtsPlayer({
             }),
           ]);
 
-          while (pausedRef.current && !stopRequestedRef.current) {
+          while (pausedRef.current && !stopRequestedRef.current && runTokenRef.current === runToken) {
             await new Promise((r) => setTimeout(r, 200));
           }
 
           await stopCurrentSound();
         }
 
-        if (!stopRequestedRef.current) setStatus("idle");
+        if (!stopRequestedRef.current && runTokenRef.current === runToken) setStatus("idle");
       } catch (e) {
         setStatus("error");
-        setError(e?.message || "Play cached audio failed");
+        setError(formatTtsError(e, "Saved audio playback is unavailable right now."));
       }
     },
-    [appwriteEndpoint, appwriteProjectId, ttsBucketId, stopCurrentSound]
+    [appwriteEndpoint, appwriteProjectId, ttsBucketId, stopCurrentSound, beginPlaybackRun]
   );
 
-  // generateAndPlay returns parts
+  // generate and Play returns parts
   const generateAndPlay = useCallback(
     async (text, opts = {}) => {
       const { onPartsReady } = opts;
 
       setError(null);
-      stopRequestedRef.current = false;
-      pausedRef.current = false;
+      const runToken = await beginPlaybackRun();
 
       try {
         const chunks = splitIntoChunks(text, 900);
@@ -203,7 +242,7 @@ export function useTtsPlayer({
         const parts = [];
 
         for (let i = 0; i < chunks.length; i++) {
-          if (stopRequestedRef.current) break;
+          if (stopRequestedRef.current || runTokenRef.current !== runToken) break;
 
           let resolveFinished;
           const finishedPromise = new Promise((resolve) => {
@@ -232,6 +271,12 @@ export function useTtsPlayer({
 
           parts.push(fileId);
 
+          if (stopRequestedRef.current || runTokenRef.current !== runToken) {
+            await sound.stopAsync().catch(() => {});
+            await sound.unloadAsync().catch(() => {});
+            break;
+          }
+
           soundRef.current = sound;
           setStatus("playing");
 
@@ -239,7 +284,7 @@ export function useTtsPlayer({
             finishedPromise,
             new Promise((resolve) => {
               const t = setInterval(() => {
-                if (stopRequestedRef.current) {
+                if (stopRequestedRef.current || runTokenRef.current !== runToken) {
                   clearInterval(t);
                   resolve();
                 }
@@ -247,14 +292,14 @@ export function useTtsPlayer({
             }),
           ]);
 
-          while (pausedRef.current && !stopRequestedRef.current) {
+          while (pausedRef.current && !stopRequestedRef.current && runTokenRef.current === runToken) {
             await new Promise((r) => setTimeout(r, 200));
           }
 
           await stopCurrentSound();
         }
 
-        if (!stopRequestedRef.current) {
+        if (!stopRequestedRef.current && runTokenRef.current === runToken) {
           setStatus("idle");
           onPartsReady?.(parts);
         }
@@ -262,7 +307,7 @@ export function useTtsPlayer({
         return { parts };
       } catch (e) {
         setStatus("error");
-        setError(e?.message || "TTS failed");
+        setError(formatTtsError(e, "Audio generation is unavailable right now."));
         return { parts: [] };
       }
     },
@@ -272,6 +317,7 @@ export function useTtsPlayer({
       appwriteProjectId,
       ttsBucketId,
       stopCurrentSound,
+      beginPlaybackRun,
     ]
   );
 

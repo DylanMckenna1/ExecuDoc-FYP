@@ -28,8 +28,29 @@ import {
 } from "../services/appwrite";
 const { brand } = Colors;
 
-
+// Profile screen
 export default function Profile({ user: userProp, onLogout }) {
+  const formatProfileError = (error, fallback) => {
+    const raw = (error?.message || error || "").trim();
+    const message = raw.toLowerCase();
+
+    if (!raw) return fallback;
+    if (message.includes("password must be between 8 and 256 characters")) {
+      return "Your new password must be between 8 and 256 characters.";
+    }
+    if (message.includes("invalid credentials")) {
+      return "Your current password is incorrect.";
+    }
+    if (message.includes("rate limit")) {
+      return "Too many attempts. Please wait a moment and try again.";
+    }
+    if (message.includes("network")) {
+      return "We could not connect right now. Please check your connection and try again.";
+    }
+    return fallback;
+  };
+  
+// Profile state - stores user info, profile type, stats, and chart data
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(userProp || null);
   const [userType, setUserType] = useState("");
@@ -38,7 +59,7 @@ export default function Profile({ user: userProp, onLogout }) {
   const [categoryChartData, setCategoryChartData] = useState([]);
   const [topCategory, setTopCategory] = useState("None");
   const [activeCategoryCount, setActiveCategoryCount] = useState(0);
-
+// Convert stored userType value into a readable label for display
   const userTypeLabel =
   userType === "student"
     ? "Student"
@@ -54,7 +75,7 @@ export default function Profile({ user: userProp, onLogout }) {
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
-
+// Load active user and profile record 
   useEffect(() => {
   let mounted = true;
 
@@ -85,12 +106,12 @@ export default function Profile({ user: userProp, onLogout }) {
     mounted = false;
   };
 }, [userProp]);
-
+// Load profile statistics from documents and saved summaries
 const loadStats = useCallback(async () => {
   try {
     const userId = user?.$id || user?.id;
     if (!userId) return;
-
+// Fetch documents and saved summaries together for faster loading
     const [docsRes, saved] = await Promise.all([
       databasesClient.listDocuments(DATABASE_ID, DOCUMENTS_COLLECTION_ID, [
         Query.equal("userID", userId),
@@ -105,17 +126,18 @@ const loadStats = useCallback(async () => {
     setDocCount(docsRes.total || 0);
     setSavedCount(saved.total || 0);
 
+// Normalise category values 
     const normaliseCategory = (value) => {
       const v = (value || "").trim().toLowerCase();
       return v || "other";
     };
-
+// Count how many documents exist in each category
     const categoryCounts = docs.reduce((acc, doc) => {
       const key = normaliseCategory(doc.category);
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
-
+// Converting category counts into chart data for the bar chart
     const chartData = Object.entries(categoryCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 4)
@@ -123,7 +145,7 @@ const loadStats = useCallback(async () => {
         value: count,
         label: category.charAt(0).toUpperCase() + category.slice(1),
       }));
-
+// Sort categories to identify the user's most used category
     const sortedCategories = Object.entries(categoryCounts).sort(
       (a, b) => b[1] - a[1]
     );
@@ -141,13 +163,13 @@ const loadStats = useCallback(async () => {
     console.log("Profile stats error:", err);
   }
 }, [user]);
-
+// Refresh stats when the Profile tab comes back into focus
 useFocusEffect(
   useCallback(() => {
     loadStats();
   }, [loadStats])
 );
-
+// Build a display name from user name or fallback to email
   const displayName = useMemo(() => {
     const n = user?.name?.trim();
     if (n) return n;
@@ -155,7 +177,7 @@ useFocusEffect(
     if (email) return email.split("@")[0];
     return "User";
   }, [user]);
-
+// Generate initials for the profile avatar
   const initials = useMemo(() => {
     const parts = displayName.split(" ").filter(Boolean);
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
@@ -163,20 +185,20 @@ useFocusEffect(
   }, [displayName]);
 
   const email = user?.email || "—";
-
+// creation date for display
 const memberSince = user?.$createdAt
   ? new Date(user.$createdAt).toLocaleDateString()
   : "—";
-
+// Logout handler
   const doLogout = async () => {
     try {
       if (onLogout) return onLogout();
       await account.deleteSession("current");
     } catch (e) {
-      Alert.alert("Logout failed", e?.message || "Try again.");
+      Alert.alert("Logout failed", formatProfileError(e, "We could not log you out right now."));
     }
   };
-
+// Change password
   const savePassword = async () => {
     if (!oldPw || !newPw || !newPw2) {
       Alert.alert("Missing info", "Please fill in all password fields.");
@@ -199,15 +221,18 @@ const memberSince = user?.$createdAt
       setOldPw("");
       setNewPw("");
       setNewPw2("");
-      Alert.alert("Success", "Password updated.");
+      Alert.alert("Password updated", "Your password has been updated successfully.");
     } catch (e) {
       console.log("update password error", e);
-      Alert.alert("Could not update password", e?.message || "Try again later.");
+      Alert.alert(
+        "Could not update password",
+        formatProfileError(e, "Please try again a little later.")
+      );
     } finally {
       setPwSaving(false);
     }
   };
-
+// Show loading state 
   if (loading) {
     return (
       <View style={styles.center}>
@@ -216,7 +241,7 @@ const memberSince = user?.$createdAt
       </View>
     );
   }
-
+// Main Profile UI
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 28 }}>
       {/* Header card */}
@@ -251,7 +276,7 @@ const memberSince = user?.$createdAt
  </View>       
   </View>
    </View>
-
+{/* Activity stats - member since, document count, and saved summary count */}
 <View style={styles.section}>
   <Text style={styles.sectionTitle}>Your activity</Text>
 
@@ -273,7 +298,7 @@ const memberSince = user?.$createdAt
   </View>
 </View>
 </View>
-
+{/* Category analytics - chart based user's uploaded documents */}
 <View style={styles.section}>
   <Text style={styles.sectionTitle}>Most used categories</Text>
   <Text style={styles.chartSubtitle}>Based on your uploaded documents</Text>
@@ -320,7 +345,7 @@ const memberSince = user?.$createdAt
         Upload a few documents to see your most used categories.
       </Text>
     )}
-
+{/* chart summary stats */}
     <View style={styles.chartStatsRow}>
       <View style={styles.chartStatPill}>
         <Text style={styles.chartStatLabel}>Top</Text>
@@ -341,7 +366,7 @@ const memberSince = user?.$createdAt
 </View>
   
 
-      {/* Menu */}
+    {/* Account actions - password update and logout */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
 
@@ -361,7 +386,7 @@ const memberSince = user?.$createdAt
         />
       </View>
 
-      {/* Change password modal */}
+      {/* Change password modal for validating and submitting update */}
       <Modal visible={pwOpen} transparent animationType="slide" onRequestClose={() => setPwOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -421,7 +446,7 @@ const memberSince = user?.$createdAt
     </ScrollView>
   );
 }
-
+// Reusable account row component used for Profile actions
 function Row({ icon, title, subtitle, onPress, danger }) {
   return (
     <TouchableOpacity onPress={onPress} style={styles.row}>
@@ -440,7 +465,7 @@ function Row({ icon, title, subtitle, onPress, danger }) {
     </TouchableOpacity>
   );
 }
-
+// Profile screen styles
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#FFFFFF", paddingHorizontal: 16, paddingTop: 12 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" },

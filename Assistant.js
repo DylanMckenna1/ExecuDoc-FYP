@@ -17,6 +17,10 @@ const showAssistantMessage = (title, message) => {
   Alert.alert(title, message);
 };
 
+const matchesExactCommand = (command, phrases = []) => {
+  return phrases.some((phrase) => normaliseVoiceText(command) === normaliseVoiceText(phrase));
+};
+
   const startRecording = async () => {
     try {
 
@@ -94,7 +98,17 @@ const showAssistantMessage = (title, message) => {
         playsInSilentModeIOS: true,
       });
     } catch {}
-    setTranscript("Something went wrong. Please try again.");
+    const message = String(err?.message || err || "").toLowerCase();
+    if (
+      message.includes("no data") ||
+      message.includes("e_audio_nodata") ||
+      message.includes("recording") ||
+      message.includes("stop")
+    ) {
+      setTranscript("I didn’t catch anything. Try speaking for a little longer.");
+    } else {
+      setTranscript("Something went wrong. Please try again.");
+    }
     setStatus("idle");
     setRecording(null);
   }
@@ -118,6 +132,14 @@ const splitVoiceCommands = (text) => {
   const raw = normaliseVoiceText(text);
   if (!raw) return [];
 
+  if (
+    /^summari[sz]e .+\b(first|second|third)\b.+\band save (it|this|the summary).*(?:to (?:the )?library|library)$/.test(
+      raw
+    )
+  ) {
+    return [raw];
+  }
+
   return raw
     .split(/\b(?:and then|then|and)\b/g)
     .map((part) => part.trim())
@@ -129,6 +151,14 @@ const cleanVoiceTargetText = (value) => {
     .replace(/\b(open|play|listen|read|save|saved)\b/g, "")
     .replace(/\b(to|of|in|library)\b/g, " ")
     .replace(/\b(saved summary|summary)\b/g, " ")
+    .replace(/\band save (?:it|this|the summary)(?: to)?(?: the)? library\b/g, " ")
+    .replace(/\bsave (?:it|this|the summary)(?: to)?(?: the)? library\b/g, " ")
+    .replace(/\bin detailed mode\b/g, " ")
+    .replace(/\bin short mode\b/g, " ")
+    .replace(/\bin brief mode\b/g, " ")
+    .replace(/\bdetailed mode\b/g, " ")
+    .replace(/\bshort mode\b/g, " ")
+    .replace(/\bbrief mode\b/g, " ")
     .replace(/\b(the|short|detailed|brief)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -456,10 +486,13 @@ if (
   return { type: "listenSavedSummary", summaryType: getRequestedSummaryType(command) };
 }
 
-  if (
+ if (
   !hasOrdinalReference(command) &&
-  matchesCommand(command, [
+  matchesExactCommand(command, [
     "finance folder",
+    "open finance folder",
+    "go to finance folder",
+    "show finance folder",
     "finance documents",
     "finance files",
     "open finance",
@@ -474,8 +507,11 @@ if (
 
   if (
   !hasOrdinalReference(command) &&
-  matchesCommand(command, [
+  matchesExactCommand(command, [
     "work folder",
+    "open work folder",
+    "go to work folder",
+    "show work folder",
     "work documents",
     "work files",
     "open work",
@@ -487,8 +523,11 @@ if (
 
   if (
   !hasOrdinalReference(command) &&
-  matchesCommand(command, [
+  matchesExactCommand(command, [
     "study folder",
+    "open study folder",
+    "go to study folder",
+    "show study folder",
     "study documents",
     "study files",
     "open study",
@@ -500,8 +539,11 @@ if (
 
   if (
   !hasOrdinalReference(command) &&
-  matchesCommand(command, [
+  matchesExactCommand(command, [
     "personal folder",
+    "open personal folder",
+    "go to personal folder",
+    "show personal folder",
     "personal documents",
     "personal files",
     "open personal",
@@ -513,8 +555,11 @@ if (
 
   if (
   !hasOrdinalReference(command) &&
-  matchesCommand(command, [
+  matchesExactCommand(command, [
     "legal folder",
+    "open legal folder",
+    "go to legal folder",
+    "show legal folder",
     "legal documents",
     "legal files",
     "open legal",
@@ -526,8 +571,11 @@ if (
 
  if (
   !hasOrdinalReference(command) &&
-  matchesCommand(command, [
+  matchesExactCommand(command, [
     "history folder",
+    "open history folder",
+    "go to history folder",
+    "show history folder",
     "history documents",
     "history files",
     "open history",
@@ -539,8 +587,11 @@ if (
 
   if (
   !hasOrdinalReference(command) &&
-  matchesCommand(command, [
+  matchesExactCommand(command, [
     "other folder",
+    "open other folder",
+    "go to other folder",
+    "show other folder",
     "other documents",
     "other files",
     "open other",
@@ -778,6 +829,12 @@ if (
       type: "selectSuggestedDoc",
       index: ordinalIndex,
       summarise: true,
+      save:
+        command.includes("save it to the library") ||
+        command.includes("save this to the library") ||
+        command.includes("save the summary to the library") ||
+        command.includes("save it to library") ||
+        command.includes("save the summary to library"),
       summaryMode: wantsDetailedSummary(command) ? "detailed" : "short",
     };
   }
@@ -807,17 +864,27 @@ if (
     return { type: "targetDocument", value: targetText, listen: true };
   }
 
+  if (command.startsWith("play ") && targetText) {
+    return { type: "targetDocument", value: targetText, listen: true };
+  }
+
   if (command.startsWith("read out ") && targetText) {
     return { type: "targetDocument", value: targetText, listen: true };
   }
 
   if ((command.startsWith("summarise ") || command.startsWith("summarize ")) && targetText) {
     return {
-     type: "targetDocument",
-     value: targetText,
-     summarise: true,
-     summaryMode: wantsDetailedSummary(command) ? "detailed" : "short",
-   };
+      type: "targetDocument",
+      value: targetText,
+      summarise: true,
+      save:
+        command.includes("save it to the library") ||
+        command.includes("save this to the library") ||
+        command.includes("save the summary to the library") ||
+        command.includes("save it to library") ||
+        command.includes("save the summary to library"),
+      summaryMode: wantsDetailedSummary(command) ? "detailed" : "short",
+    };
   }
 
   return null;
@@ -1003,6 +1070,10 @@ if (action.type === "listenSavedSummary") {
   if (action.summarise) {
     documentsParams.autoSummariseRecent = true;
     documentsParams.autoSummaryMode = action.summaryMode || "short";
+  }
+
+  if (action.save) {
+    documentsParams.autoSaveRecentSummary = true;
   }
 
   if (action.listen) {

@@ -339,11 +339,8 @@ const filteredItems = items.filter((it) => {
 
   if (!q) return true;
 
-  const hay = [it.title, it.summaryType, it.summaryText, it.category, it.keywords]
-    .map(norm)
-    .join(" ");
-
-  return hay.includes(q);
+  const titleOnly = norm(it.title);
+  return titleOnly.includes(q);
 });
 // read saved audio parts
 function getAudioParts(item) {
